@@ -105,7 +105,7 @@ jobs:
           fi
           cat merge-err.txt >> "$GITHUB_STEP_SUMMARY" || true
 
-      - name: Clean — open sync PR
+      - name: Clean — merge and push sync branch
         if: steps.merge.outputs.result == 'clean'
         shell: bash
         env:
@@ -113,21 +113,104 @@ jobs:
         run: |
           set -euo pipefail
           branch="sync/upstream-${SHORT_SHA}"
+          echo "SYNC_BRANCH=$branch" >> "$GITHUB_ENV"
           git checkout -b "$branch"
           git merge --no-ff "upstream/${UPSTREAM_REF}" \
             -m "chore(sync): merge ${UPSTREAM_REPO}@${SHORT_SHA}" | tail -n 5
           git push -u origin "$branch"
+
+      - name: Patch layer — protonprep check
+        id: patchcheck
+        if: steps.merge.outputs.result == 'clean'
+        timeout-minutes: 60
+        shell: bash
+        run: |
+          set -euo pipefail
+          # GE patch-stack validation (docs/SYNC.md Phase 2: patch layer).
+          # protonprep-valve-staging.sh has no `set -e`: a failed `patch`
+          # does not abort it, so its exit code alone proves nothing.
+          # Keep the log as patchlog.txt and scan it for the failure
+          # signatures of patch(1), git and wine-staging patchinstall.py.
+          set +e
+          git submodule update --init --filter=tree:0 --recursive \
+            wine wine-staging dxvk d7vk openvr vkd3d-proton dxvk-nvapi \
+            protonfixes vklayers/low_latency_layer \
+            >submodule-init.log 2>&1
+          init_exit=$?
+          set -e
+          if [ "$init_exit" -ne 0 ]; then
+            result=ERROR
+            echo "result=ERROR" >> "$GITHUB_OUTPUT"
+            cat submodule-init.log >> "$GITHUB_STEP_SUMMARY"
+          else
+            set +e
+            ./patches/protonprep-valve-staging.sh >patchlog.txt 2>&1
+            prep_exit=$?
+            set -e
+            echo "protonprep exit: $prep_exit"
+            if [ "$prep_exit" -ne 0 ]; then
+              result=FAIL
+            elif grep -Ev -- 'cleanup -Werror' patchlog.txt \
+              | grep -Ei 'FAILED|reversed \(or previously applied\)|malformed patch|patch unexpectedly|saving rejects to file|skipping patch|^error:|conflict \(content\)|failed to apply|does not apply|No such file or directory' \
+              >patch-failures.txt; then
+              result=FAIL
+            else
+              result=PASS
+            fi
+            echo "result=$result" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Patch layer: $result"
+              echo ""
+              if [ "$result" = "FAIL" ]; then
+                echo "protonprep exit: \`$prep_exit\`. Matching log lines:"
+                echo '```'
+                head -n 50 patch-failures.txt
+                echo '```'
+              elif [ "$result" = "PASS" ]; then
+                echo "protonprep exit: \`$prep_exit\`, no failure signatures in patchlog.txt."
+              else
+                echo "submodule init failed (infra); patch state unknown."
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Clean — open sync PR
+        if: steps.merge.outputs.result == 'clean'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PATCH_RESULT: ${{ steps.patchcheck.outputs.result }}
+        run: |
+          set -euo pipefail
+          patch_result="$PATCH_RESULT"
           {
             echo "## Upstream Sync PR"
             echo ""
             echo "- upstream: ${UPSTREAM_REPO}@${UPSTREAM_REF} (\`${UPSTREAM_SHA}\`)"
             echo "- base: \`${BASE_SHA}\` (behind ${BEHIND})"
             echo ""
+            echo "### Patch layer: $patch_result"
+            echo ""
+            if [ "$patch_result" = "PASS" ]; then
+              echo "protonprep-valve-staging.sh applied cleanly on the merged tree."
+            elif [ "$patch_result" = "FAIL" ]; then
+              echo "> [!WARNING]"
+              echo "> Patch layer FAILED: the merge is clean but the GE patch stack"
+              echo "> does not apply. See the workflow run log (patchlog.txt) before merging."
+              echo ""
+              echo "Matching failure lines:"
+              echo '```'
+              head -n 50 patch-failures.txt
+              echo '```'
+            else
+              echo "Patch check inconclusive (submodule init failed); patch state unknown."
+            fi
+            echo ""
             echo "### Upstream changes"
             git log --oneline "${BASE_SHA}..${UPSTREAM_SHA}" | head -n 20
             } > pr-body.md
           gh pr create --title "[upstream-sync] merge upstream/${SHORT_SHA}" \
-            --body-file pr-body.md --base master --head "$branch" \
+            --body-file pr-body.md --base master --head "$SYNC_BRANCH" \
             --label upstream-sync
 
       - name: Classify conflict (trivial-only?)
