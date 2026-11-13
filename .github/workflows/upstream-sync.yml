@@ -131,6 +131,13 @@ jobs:
           # does not abort it, so its exit code alone proves nothing.
           # Keep the log as patchlog.txt and scan it for the failure
           # signatures of patch(1), git and wine-staging patchinstall.py.
+          # NOTE: a bare "Skipping patch" is NOT a marker on its own:
+          # upstream itself carries redundant new-file patches (e.g. the
+          # umu 1041720 gamefix, also shipped inside the protonfixes
+          # submodule), which skip every run with "already exists".
+          # Absorbed patches still match via "Reversed (or previously
+          # applied)". Compare a FAIL against the previous green run to
+          # tell new merge breakage from pre-existing upstream noise.
           set +e
           git submodule update --init --filter=tree:0 --recursive \
             wine wine-staging dxvk d7vk openvr vkd3d-proton dxvk-nvapi \
@@ -151,7 +158,7 @@ jobs:
             if [ "$prep_exit" -ne 0 ]; then
               result=FAIL
             elif grep -Ev -- 'cleanup -Werror' patchlog.txt \
-              | grep -Ei 'FAILED|reversed \(or previously applied\)|malformed patch|patch unexpectedly|saving rejects to file|skipping patch|^error:|conflict \(content\)|failed to apply|does not apply|No such file or directory' \
+              | grep -Ei 'FAILED|reversed \(or previously applied\)|malformed patch|patch unexpectedly|saving rejects to file|^error:|conflict \(content\)|failed to apply|does not apply|No such file or directory' \
               >patch-failures.txt; then
               result=FAIL
             else
@@ -197,6 +204,9 @@ jobs:
               echo "> [!WARNING]"
               echo "> Patch layer FAILED: the merge is clean but the GE patch stack"
               echo "> does not apply. See the workflow run log (patchlog.txt) before merging."
+              echo ">"
+              echo "> Triage hint: compare with the previous green run — pre-existing"
+              echo "> upstream noise (e.g. redundant new-file patches) can also match."
               echo ""
               echo "Matching failure lines:"
               echo '```'
