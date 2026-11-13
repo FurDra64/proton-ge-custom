@@ -125,6 +125,15 @@ apply_all_in_dir() {
     git reset --hard HEAD
     git clean -xdf
 
+### (2-0) FURDRA64/WINE-OWNED PATCHSET SECTION ###
+
+    # FurDra64/wine keeps a clean tree + patches/ overlay (series.conf order).
+    # Apply the wine-owned patchsets first; GE protonprep sections below layer on top.
+    echo "WINE: -FURDRA64- applying wine-owned patchsets (scripts/apply-patches.sh)"
+    bash scripts/apply-patches.sh || exit 1
+
+### END FURDRA64/WINE-OWNED PATCHSET SECTION ###
+
 ### (2-1) PROBLEMATIC COMMIT REVERT SECTION ###
 
 # Bring back configure files. Staging uses them to regenerate fresh ones
