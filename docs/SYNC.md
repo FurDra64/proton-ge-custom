@@ -16,8 +16,9 @@
 2. **patch 層**: `patches/protonprep-valve-staging.sh` の適用が失敗するか
    (`patchlog.txt` に fail/error が出るか)。
 - git 層が成功しても patch 層で壊れることがあるため、
-  「merge 成功 = 緑」と誤認しない。v1 スケルトンは git 層のみを判定し、
-  patch 層は Phase 2 で追加する。
+  「merge 成功 = 緑」と誤認しない。Phase 2 で Clean 分岐に protonprep 適用検証を
+  追加し、結果 (PASS/FAIL/ERROR) を PR 本文に明記する (FAIL でも PR は作り、
+  merge 可否の判断材料にする)。
 
 ## conflict 時の挙動 (v1)
 - **Issue 起票が正**。コンフリクト状態のまま PR を作ってもマージ不可で
