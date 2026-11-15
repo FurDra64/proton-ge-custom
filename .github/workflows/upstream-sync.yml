@@ -1,0 +1,229 @@
+name: Upstream Sync
+
+# 上流 GE-Proton/master への追従チェック。
+# 方針は docs/SYNC.md が正。master への直接 push はしない。
+# 成功時: sync/upstream-* ブランチ + PR / 自明conflictのみ: 自動解決 PR
+# それ以外の conflict: Issue 起票 (PR は作らない)。
+
+on:
+  schedule:
+    # 毎日 JST 03:00 (UTC 18:00)
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: 'Upstream ref to sync (default: master)'
+        required: false
+        default: 'master'
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Check upstream
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM_REPO: GloriousEggroll/proton-ge-custom
+      UPSTREAM_REF: ${{ inputs.upstream_ref || 'master' }}
+      # NOTE: .github/upstreams.yml の trivial_paths と二重管理。
+      # yq 依存を避けるためここに直書き。増やすときは両方を更新すること。
+      TRIVIAL_PATTERNS: 'VERSION *.md compatibility-report.md *.vdf.template user_settings.sample.py'
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          submodules: false
+
+      - name: Fetch upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git" 2>/dev/null || \
+            git remote set-url upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch upstream "${UPSTREAM_REF}" --tags
+          echo "UPSTREAM_SHA=$(git rev-parse "upstream/${UPSTREAM_REF}")" >> "$GITHUB_ENV"
+          echo "BASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "BEHIND=$(git rev-list --count HEAD.."upstream/${UPSTREAM_REF}")" >> "$GITHUB_ENV"
+
+      - name: Up to date — nothing to do
+        if: env.BEHIND == '0'
+        shell: bash
+        run: |
+          {
+            echo "## Upstream Sync: up to date"
+            echo ""
+            echo "- upstream: ${UPSTREAM_REPO}@${UPSTREAM_REF} (${UPSTREAM_SHA})"
+            echo "- base: ${BASE_SHA}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Skip if already reported for this SHA
+        id: dedup
+        if: env.BEHIND != '0'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          short="$(git rev-parse --short "$UPSTREAM_SHA")"
+          echo "SHORT_SHA=$short" >> "$GITHUB_ENV"
+          open_issue="$(gh issue list --state open --label upstream-sync \
+            --search "$short in:title" --json number --jq 'length')"
+          open_pr="$(gh pr list --state open --label upstream-sync \
+            --search "$short in:title" --json number --jq 'length')"
+          if [ "$open_issue" != "0" ] || [ "$open_pr" != "0" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Already reported for $short — skipping." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Attempt merge (no commit)
+        id: merge
+        if: env.BEHIND != '0' && steps.dedup.outputs.skip == 'false'
+        shell: bash
+        run: |
+          set -u
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config rerere.enabled true
+          if git merge --no-commit --no-ff "upstream/${UPSTREAM_REF}" 2>merge-err.txt; then
+            echo "result=clean" >> "$GITHUB_OUTPUT"
+            git merge --abort
+          else
+            echo "result=conflict" >> "$GITHUB_OUTPUT"
+            git diff --name-only --diff-filter=U > conflict-files.txt || true
+            git merge --abort
+          fi
+          cat merge-err.txt >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Clean — open sync PR
+        if: steps.merge.outputs.result == 'clean'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          branch="sync/upstream-${SHORT_SHA}"
+          git checkout -b "$branch"
+          git merge --no-ff "upstream/${UPSTREAM_REF}" \
+            -m "chore(sync): merge ${UPSTREAM_REPO}@${SHORT_SHA}" | tail -n 5
+          git push -u origin "$branch"
+          {
+            echo "## Upstream Sync PR"
+            echo ""
+            echo "- upstream: ${UPSTREAM_REPO}@${UPSTREAM_REF} (\`${UPSTREAM_SHA}\`)"
+            echo "- base: \`${BASE_SHA}\` (behind ${BEHIND})"
+            echo ""
+            echo "### Upstream changes"
+            git log --oneline "${BASE_SHA}..${UPSTREAM_SHA}" | head -n 20
+            } > pr-body.md
+          gh pr create --title "[upstream-sync] merge upstream/${SHORT_SHA}" \
+            --body-file pr-body.md --base master --head "$branch" \
+            --label upstream-sync
+
+      - name: Classify conflict (trivial-only?)
+        id: classify
+        if: steps.merge.outputs.result == 'conflict'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # conflict-files.txt の各行が TRIVIAL_PATTERNS のいずれかに一致するか判定
+          trivial_only=true
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            matched=false
+            # shellcheck disable=SC2086
+            for pat in $TRIVIAL_PATTERNS; do
+              # shellcheck disable=SC2053
+              case "$f" in
+                $pat) matched=true; break ;;
+              esac
+            done
+            if [ "$matched" = false ]; then
+              # *.md は basename でも判定 (サブディレクトリの md を拾う)
+              case "$f" in
+                *.md) matched=true ;;
+              esac
+            fi
+            if [ "$matched" = false ]; then
+              trivial_only=false
+              break
+            fi
+          done < conflict-files.txt
+          echo "trivial_only=$trivial_only" >> "$GITHUB_OUTPUT"
+          echo "Conflict files:" >> "$GITHUB_STEP_SUMMARY"
+          cat conflict-files.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Trivial-only — auto-resolve with upstream
+        if: steps.merge.outputs.result == 'conflict' && steps.classify.outputs.trivial_only == 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          branch="sync/upstream-${SHORT_SHA}"
+          git checkout -b "$branch"
+          # 自明ファイルは upstream 側を採用して解決
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            git checkout --theirs -- "$f"
+            git add -- "$f"
+          done < conflict-files.txt
+          git commit -m "chore(sync): merge ${UPSTREAM_REPO}@${SHORT_SHA} (trivial auto-resolve)"
+          git push -u origin "$branch"
+          {
+            echo "upstream \`${UPSTREAM_SHA}\` との conflict は自明ファイルのみのため自動解決しました。"
+            echo ""
+            echo "### Auto-resolved files"
+            cat conflict-files.txt
+          } > pr-body-trivial.md
+          gh pr create --title "[upstream-sync] merge upstream/${SHORT_SHA} (trivial auto-resolved)" \
+            --body-file pr-body-trivial.md --base master --head "$branch" \
+            --label "upstream-sync,automerge-trivial"
+
+      - name: Non-trivial — open conflict Issue
+        if: steps.merge.outputs.result == 'conflict' && steps.classify.outputs.trivial_only != 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Upstream Sync conflict"
+            echo ""
+            echo "自動 merge に失敗しました。手動解決が必要です。"
+            echo "(自明ファイルのみの conflict ではないため自動解決しません。方針: docs/SYNC.md)"
+            echo ""
+            echo "- upstream: ${UPSTREAM_REPO}@${UPSTREAM_REF} (\`${UPSTREAM_SHA}\`)"
+            echo "- base: \`${BASE_SHA}\` (behind ${BEHIND})"
+            echo ""
+            echo "### Conflict files"
+            echo '```'
+            cat conflict-files.txt
+            echo '```'
+            echo ""
+            echo "### Upstream log (latest 10)"
+            echo '```'
+            git log --oneline "upstream/${UPSTREAM_REF}" -10
+            echo '```'
+            echo ""
+            echo "### How to resolve"
+            echo '```bash'
+            echo "git remote add upstream https://github.com/${UPSTREAM_REPO}.git"
+            echo "git fetch upstream ${UPSTREAM_REF}"
+            echo "git checkout -b sync/upstream-${SHORT_SHA} master"
+            echo "git merge --no-ff upstream/${UPSTREAM_REF}"
+            echo "# resolve conflicts, then open a PR"
+            echo '```'
+          } > issue-body.md
+          gh issue create --title "[upstream-sync] conflict with upstream/${SHORT_SHA}" \
+            --body-file issue-body.md --label "upstream-sync,conflict"

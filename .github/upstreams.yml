@@ -1,0 +1,31 @@
+# Upstream 追従源の manifest (v1)
+# v1 では primary 1件のみ有効。secondaries は Phase 2 用の雛形。
+version: 1
+
+primary:
+  name: ge-upstream
+  repo: GloriousEggroll/proton-ge-custom
+  ref: master
+  strategy: merge # rebase 禁止 (docs/SYNC.md)
+  enabled: true
+
+secondaries: []
+  # Phase 2 追加例 (CachyOS 等):
+  # - name: cachyos-proton
+  #   repo: CachyOS/proton-cachyos
+  #   ref: master
+  #   strategy: cherry-pick # secondaries は直接 merge せず個別取込
+  #   enabled: false
+
+# 自明ファイル (conflict しても workflow が upstream 採用で自動解決してよい集合)
+trivial_paths:
+  - "VERSION"
+  - "*.md"
+  - "compatibility-report.md"
+  - "*.vdf.template"
+  - "user_settings.sample.py"
+
+labels:
+  sync: upstream-sync
+  conflict: conflict
+  trivial_pr: automerge-trivial
