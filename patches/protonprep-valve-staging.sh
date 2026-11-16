@@ -8,8 +8,8 @@ apply_patch() {
     # least one target file, and the tree must show it applied afterwards.
     # An unexpected 0-file skip is FAILED (see apply_all_in_dir for dirs).
     local nfiles
-    nfiles=$(git apply --numstat "$patch_path" 2>/dev/null | tr -d '[:space:]')
-    if [ -z "$nfiles" ] || [ "$nfiles" -eq 0 ]; then
+    nfiles=$(git apply --numstat "$patch_path" 2>/dev/null | wc -l)
+    if [ "$nfiles" -eq 0 ]; then
         echo "FAILED patch=$patch_path (targets no files)" >&2
         if [ "${CHECK_MODE:-0}" = "1" ]; then
             FAIL_COUNT=$((FAIL_COUNT + 1))
@@ -32,7 +32,10 @@ apply_patch() {
         return 1
     fi
     # Non-interactive fallback (</dev/null); GNU fuzz preserved for GE layers.
-    if patch -Np1 -s --no-backup-if-mismatch -i "$patch_path" </dev/null; then
+    # An already-applied patch (upstream absorbed it) is reported as OBSOLETE,
+    # not silently passed: it needs a removal decision, not a repair.
+    patch_out=$(patch -Np1 -s --no-backup-if-mismatch -i "$patch_path" </dev/null 2>&1) && patch_rc=0 || patch_rc=$?
+    if [ "$patch_rc" -eq 0 ]; then
         if patch -R -Np1 -s --dry-run -i "$patch_path" </dev/null 2>/dev/null; then
             if [ "${CHECK_MODE:-0}" = "1" ]; then
                 PASS_COUNT=$((PASS_COUNT + 1))
@@ -46,7 +49,11 @@ apply_patch() {
         fi
         return 1
     fi
-    echo "FAILED patch=$patch_path" >&2
+    if echo "$patch_out" | grep -q "Reversed (or previously applied)"; then
+        echo "OBSOLETE patch=$patch_path (already in tree)" >&2
+    else
+        echo "FAILED patch=$patch_path" >&2
+    fi
     if [ "${CHECK_MODE:-0}" = "1" ]; then
         FAIL_COUNT=$((FAIL_COUNT + 1))
         return 0
@@ -95,7 +102,7 @@ FAIL_COUNT=0
 if [ "${1:-}" = "--check" ]; then
     CHECK_MODE=1
     SHADOW="$(mktemp -d "${PWD}/.wine-check-XXXXXX")"
-    trap 'rm -rf "$SHADOW"' EXIT
+    trap 'cd / && rm -rf "$SHADOW"' EXIT
     git -C wine archive HEAD | tar -x -C "$SHADOW"
     # Make the shadow a git repo with committed base: bare `git apply`
     # silently skips `diff --git` patches in an untracked dir (verified:
