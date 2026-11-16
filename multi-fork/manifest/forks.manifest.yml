@@ -1,0 +1,25 @@
+# Fork inventory, v2 (v1-compatible).
+# v1 readers: `primary` below mirrors `.github/upstreams.yml` v1.
+# v2 readers: iterate `forks[]`; `enabled: false` entries are skipped.
+version: 2
+primary:
+  name: ge-upstream
+  repo: GloriousEggroll/proton-ge-custom
+  ref: master
+forks:
+  - name: ge-upstream
+    repo: GloriousEggroll/proton-ge-custom
+    ref: master
+    strategy: merge
+    enabled: true
+  - name: cachyos-proton
+    # UNVERIFIED repo path — verify before enabling (see pins/cachyos-proton.conf).
+    repo: CachyOS/proton-cachyos
+    ref: master
+    strategy: cherry-pick
+    enabled: false
+  - name: wine-staging
+    repo: wine-staging/wine-staging
+    ref: master
+    strategy: cherry-pick
+    enabled: false
