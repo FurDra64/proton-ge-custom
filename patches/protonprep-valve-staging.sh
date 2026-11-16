@@ -3,17 +3,106 @@
 # patch functions
 apply_patch() {
     local patch_path="$1"
-    patch -Np1 < "$patch_path"
+    # Guard against empty-PASS regressions (git apply exiting 0 in a pushd
+    # subdirectory without touching anything): every patch must name at
+    # least one target file, and the tree must show it applied afterwards.
+    # An unexpected 0-file skip is FAILED (see apply_all_in_dir for dirs).
+    local nfiles
+    nfiles=$(git apply --numstat "$patch_path" 2>/dev/null | tr -d '[:space:]')
+    if [ -z "$nfiles" ] || [ "$nfiles" -eq 0 ]; then
+        echo "FAILED patch=$patch_path (targets no files)" >&2
+        if [ "${CHECK_MODE:-0}" = "1" ]; then
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+            return 0
+        fi
+        return 1
+    fi
+    if git apply -p1 --whitespace=fix "$patch_path"; then
+        if git apply --check -R -p1 "$patch_path" 2>/dev/null; then
+            if [ "${CHECK_MODE:-0}" = "1" ]; then
+                PASS_COUNT=$((PASS_COUNT + 1))
+            fi
+            return 0
+        fi
+        echo "FAILED patch=$patch_path (not applied)" >&2
+        if [ "${CHECK_MODE:-0}" = "1" ]; then
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+            return 0
+        fi
+        return 1
+    fi
+    # Non-interactive fallback (</dev/null); GNU fuzz preserved for GE layers.
+    if patch -Np1 -s --no-backup-if-mismatch -i "$patch_path" </dev/null; then
+        if patch -R -Np1 -s --dry-run -i "$patch_path" </dev/null 2>/dev/null; then
+            if [ "${CHECK_MODE:-0}" = "1" ]; then
+                PASS_COUNT=$((PASS_COUNT + 1))
+            fi
+            return 0
+        fi
+        echo "FAILED patch=$patch_path (not applied)" >&2
+        if [ "${CHECK_MODE:-0}" = "1" ]; then
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+            return 0
+        fi
+        return 1
+    fi
+    echo "FAILED patch=$patch_path" >&2
+    if [ "${CHECK_MODE:-0}" = "1" ]; then
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        return 0
+    fi
+    return 1
 }
+
+# Directories known to legitimately contain no *.patch files. An empty,
+# undeclared directory is an unexpected skip and counts as FAILED.
+EMPTY_OK_DIRS=()
 
 apply_all_in_dir() {
     local dir="$1"
-    for patch in "$dir"/*.patch; do
+    shopt -s nullglob
+    local patches=("$dir"/*.patch)
+    if [ "${#patches[@]}" -eq 0 ]; then
+        local d
+        for d in "${EMPTY_OK_DIRS[@]}"; do
+            if [ "$dir" = "$d" ]; then
+                return 0
+            fi
+        done
+        echo "FAILED dir=$dir (no patches)" >&2
+        if [ "${CHECK_MODE:-0}" = "1" ]; then
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+            return 0
+        fi
+        return 1
+    fi
+    local patch
+    for patch in "${patches[@]}"; do
         apply_patch "$patch"
     done
 }
 
+CHECK_MODE=0
+SHADOW=""
+PASS_COUNT=0
+FAIL_COUNT=0
+
+# --check: export pristine wine HEAD to a shadow sibling directory (so that
+# ../patches and ../wine-staging resolve) and run only the WINE sections
+# (2-0 through 2-7) against it. Network/build steps are skipped. The real
+# tree is never touched; the shadow is always removed via the EXIT trap.
+# Known residuals are reported as FAILED, never repaired here.
+if [ "${1:-}" = "--check" ]; then
+    CHECK_MODE=1
+    SHADOW="$(mktemp -d "${PWD}/.wine-check-XXXXXX")"
+    trap 'rm -rf "$SHADOW"' EXIT
+    git -C wine archive HEAD | tar -x -C "$SHADOW"
+    echo "check: running WINE sections (2-0 through 2-7) against $SHADOW"
+fi
+
 ### (1) PREP SECTION ###
+
+    if [ "$CHECK_MODE" != "1" ]; then
 
     # Wine-Mono is reset from its pinned release archive rather than a Git submodule.
     bash ./patches/wine-mono/prepare.sh || exit 1
@@ -116,19 +205,28 @@ apply_all_in_dir() {
 
     echo "VRCLIENT: apply build fixes"
     apply_all_in_dir "patches/vrclient"
+    fi
 
 ### (2) WINE PATCHING ###
 
-    pushd wine
-    git reset --hard HEAD
-    git clean -xdf
+    if [ "$CHECK_MODE" = "1" ]; then
+        pushd "$SHADOW" > /dev/null
+    else
+        pushd wine
+        git reset --hard HEAD
+        git clean -xdf
+    fi
 
 ### (2-0) FURDRA64/WINE-OWNED PATCHSET SECTION ###
 
     # FurDra64/wine keeps a clean tree + patches/ overlay (series.conf order).
     # Apply the wine-owned patchsets first; GE protonprep sections below layer on top.
     echo "WINE: -FURDRA64- applying wine-owned patchsets (scripts/apply-patches.sh)"
-    bash scripts/apply-patches.sh || exit 1
+    if [ "$CHECK_MODE" = "1" ]; then
+        bash scripts/apply-patches.sh || { echo "FAILED scripts/apply-patches.sh" >&2; FAIL_COUNT=$((FAIL_COUNT + 1)); }
+    else
+        bash scripts/apply-patches.sh || exit 1
+    fi
 
 ### END FURDRA64/WINE-OWNED PATCHSET SECTION ###
 
@@ -137,7 +235,9 @@ apply_all_in_dir() {
 # Bring back configure files. Staging uses them to regenerate fresh ones
 # https://github.com/ValveSoftware/wine/commit/e813ca5771658b00875924ab88d525322e50d39f
 
-    git revert --no-commit e813ca5771658b00875924ab88d525322e50d39f
+    if [ "$CHECK_MODE" != "1" ]; then
+        git revert --no-commit e813ca5771658b00875924ab88d525322e50d39f
+    fi
 
 ### END PROBLEMATIC COMMIT REVERT SECTION ###
 
@@ -153,8 +253,6 @@ apply_all_in_dir() {
     echo "WINE: -CUSTOM- ETAASH WINE-WAYLAND+ PATCHES"
     apply_all_in_dir "../patches/wine-hotfixes/wine-wayland/"
 
-    echo "WINE: -CUSTOM- ETAASH WINE-WAYLAND+ SNI SUPPORT"
-    apply_patch "../patches/wine-hotfixes/em-fixups/0001-winewayland-add-SNI-tray-icons-and-native-context-me.patch"
 
     # Original work by Erhan Bilgili:
     # https://github.com/nanomatters/wine-wineland/tree/wineland_20260713-reorg
@@ -164,7 +262,25 @@ apply_all_in_dir() {
     echo "WINE: -CUSTOM- ETAASH WINE-WAYLAND+ FIXUPS"
     for patch in ../patches/wine-hotfixes/em-fixups/*.patch; do
         case "$patch" in
-            */0001-winewayland-add-SNI-tray-icons-and-native-context-me.patch) ;;
+            */0001-winewayland-add-SNI-tray-icons-and-native-context-me.patch|\
+            */0002-winewayland-route-tray-balloons-through-desktop-notifications.patch|\
+            */0003-winewayland-position-edge-notification-windows.patch|\
+            */0004-win32u-initialize-vulkan-for-wayland-overlay-layer.patch|\
+            */0005-explorer-honor-WINE_GRAPHICS_DRIVER.patch|\
+            */0006-win32u-bridge-Steam-overlay-through-native-EGL.patch|\
+            */0007-win32u-suppress-game-input-while-Steam-overlay-is-active.patch|\
+            */0037-server-terminate-system-threads-with-last-user-thread.patch|\
+            */0053-win32u-preserve-overlay-cursor-ownership.patch|\
+            */0054-winewayland-commit-pointer-constraint-updates.patch|\
+            */0056-win32u-preserve-xembed-tray-on-mutter.patch|\
+            */0058-win32u-omit-unimplemented-sni-menu-property.patch|\
+            */0059-winewayland-release-tray-menu-keyboard-focus.patch|\
+            */0061-winewayland-place-tray-menus-above-shell-panels.patch|\
+            */0062-winex11-restore-tray-icons-after-host-recreation.patch|\
+            */0063-explorer-forward-tray-click-foreground-permission.patch|\
+            */0065-win32u-keep-game-windows-out-of-tray-menu-layers.patch|\
+            */0074-win32u-advertise-sni-menu-sentinel-on-gnome.patch|\
+            */winewayland-render-ddb-cursors-to-32bit-dib.patch) ;;
             *) apply_patch "$patch" ;;
         esac
     done
@@ -257,20 +373,10 @@ apply_all_in_dir() {
     # wined3d-SWVP-shaders -- interferes with proton's wined3d -- currently also disabled in upstream staging
     # wined3d-Indexed_Vertex_Blending -- interferes with proton's wined3d -- currently also disabled in upstream staging
 
-    echo "WINE: -STAGING- winedevice-Default_Drivers manually applied"
-    apply_all_in_dir "../patches/wine-hotfixes/wine-staging/winedevice-Default_Drivers/"
 
-    echo "WINE: -STAGING- ntdll-Hide_Wine_Exports manually applied"
-    apply_all_in_dir "../patches/wine-hotfixes/wine-staging/ntdll-Hide_Wine_Exports/"
 
-    echo "WINE: -STAGING- kernel32-Debugger manually applied"
-    apply_all_in_dir "../patches/wine-hotfixes/wine-staging/kernel32-Debugger/"
 
-    echo "WINE: -STAGING- ntdll-ext4-case-folder manually applied"
-    apply_all_in_dir "../patches/wine-hotfixes/wine-staging/ntdll-ext4-case-folder/"
 
-    echo "WINE: -STAGING- winex11-Window_Style manually applied"
-    apply_all_in_dir "../patches/wine-hotfixes/wine-staging/winex11-Window_Style/"
 
     echo "WINE: -STAGING- wininet-Cleanup manually applied"
     # Skip 0005: it makes HTTP_ADDREQ_FLAG_REPLACE fail for headers not yet
@@ -289,8 +395,6 @@ apply_all_in_dir() {
     echo "WINE: -STAGING- winex11-ime-check-thread-data manually applied"
     apply_all_in_dir "../patches/wine-hotfixes/wine-staging/winex11-ime-check-thread-data/"
 
-    echo "WINE: -STAGING- winex11-Fixed-scancodes manually applied"
-    apply_all_in_dir "../patches/wine-hotfixes/wine-staging/winex11-Fixed-scancodes/"
 
     echo "WINE: -STAGING- comctl32_animate_avi cleanup -Werror"
     apply_all_in_dir "../patches/wine-hotfixes/wine-staging/comctl32_animate_avi/"
@@ -309,96 +413,53 @@ apply_all_in_dir() {
 
 ### (2-4) GAME PATCH SECTION ###
 
-    echo "WINE: -GAME FIXES- assetto corsa hud fix"
-    apply_patch "../patches/game-patches/assettocorsa-hud.patch"
 
-    echo "WINE: -GAME FIXES- add file search workaround hack for Phantasy Star Online 2 (WINE_NO_OPEN_FILE_SEARCH)"
-    apply_patch "../patches/game-patches/pso2_hack.patch"
 
-    echo "WINE: -GAME FIXES- add set current directory workaround for Vanguard Saga of Heroes"
-    apply_patch "../patches/game-patches/vgsoh.patch"
 
-    echo "WINE: -GAME FIXES- add fixes for star citizen"
-    apply_patch "../patches/game-patches/silence-starcitizen-unsupported-os.patch"
-    apply_patch "../patches/game-patches/eac_60101_timeout.patch"
 
-    echo "WINE: -GAME FIXES- add TBH: Task Bar Hero fixes"
-    apply_patch "../patches/game-patches/layered-overlay-wine.patch"
 
     # multi-process-launcher-x11-fallback.patch is intentionally disabled.
     # Wine-Wayland now renders cross-process launcher windows directly.
 
-    echo "WINE: -GAME FIXES- add fixes Guilty Gear Accent Core Plus R intro video (win32u related)"
-    apply_patch "../patches/game-patches/0001-win32u-Avoid-zero-WM_ACTIVATEAPP-lparam-on-first-for.patch"
 
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/721
-    echo "WINE: -GAME FIXES- keep Black Desert fullscreen on focus loss"
-    apply_patch "../patches/game-patches/black-desert-keep-fullscreen-on-focus-loss.patch"
 
     echo "WINE: -GAME FIXES- make MapleStory launch: avoid NULL deref in CharPrevA/CharPrevExA"
     apply_patch "../patches/game-patches/maplestory-kernelbase-charprev-null.patch"
 
-    echo "WINE: -GAME FIXES- make MapleStory launch: accept SPI_SETSTICKYKEYS/SPI_SETFILTERKEYS"
-    apply_patch "../patches/game-patches/maplestory-spi-stickykeys-filterkeys.patch"
 
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/736
-    echo "WINE: -GAME FIXES- allow AI LIMIT DX12 to reuse its packaged compute shaders"
-    apply_patch "../patches/game-patches/ai-limit-dx12-compute-shader-fallback.patch"
 
     # Original CPU detection diagnosis and fix by LuigoAlma:
     # https://www.reddit.com/r/Amd/comments/dr5f0b/comment/f6q2krp/
-    echo "WINE: -GAME FIXES- fix Max Payne JPEG loading on modern CPUs"
-    apply_patch "../patches/game-patches/max-payne-cpu-detection.patch"
 
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/587
     # https://bugs.winehq.org/show_bug.cgi?id=60296
-    echo "WINE: -GAME FIXES- restore Return to Krondor text bitmap readback"
-    apply_patch "../patches/game-patches/return-to-krondor-text-bitmap-readback.patch"
 
-    echo "WINE: -GAME FIXES- repair NASCAR 25 protected loader state"
-    apply_patch "../patches/game-patches/nascar25-protector.patch"
 
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/847
     # Original fix by mkrsym1 in dawn-winery/wine-dwproton (ecedc3e2d6d2)
-    echo "WINE: -GAME FIXES- call DriverEntry with a kernel-mode return address for ACE anti-cheat"
-    apply_patch "../patches/game-patches/ace-driverentry-kernel-return-address.patch"
 
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/847
     # ACE-CORE driver fixes by NelloKudo in dawn-winery/wine-dwproton
     # (4ef68081d5, 6a06ad015f, e7942574f6, 532d18e79a)
-    echo "WINE: -GAME FIXES- add ntoskrnl MmCopyMemory, ServiceKeyName, MDL view and PsGetContextThread fixes for ACE anti-cheat"
-    apply_patch "../patches/game-patches/ace-ntoskrnl-mmcopymemory-stub.patch"
-    apply_patch "../patches/game-patches/ace-ntoskrnl-service-key-name.patch"
-    apply_patch "../patches/game-patches/ace-ntoskrnl-keep-mdl-section-views-mapped.patch"
-    apply_patch "../patches/game-patches/ace-ntoskrnl-psgetcontextthread-thunk.patch"
 
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/847
     # ACE-CORE fails DriverEntry unless lsass.exe is running. Backported in
     # CachyOS/wine-cachyos (3b0c6a64ba, b1fbd12dd0); drop with the Wine 12 rebase.
     echo "WINE: -GAME FIXES- add and start an lsass.exe SamSs service stub for ACE anti-cheat"
     apply_patch "../patches/game-patches/ace-lsass-samss-service-stub.patch"
-    apply_patch "../patches/game-patches/ace-wineboot-start-samss-service.patch"
 
 ### END GAME PATCH SECTION ###
 
 ### (2-5) WINE HOTFIX/BACKPORT SECTION ###
-    echo "WINE: -HOTFIX- Fix Smart Tee negotiation and V4L WoW64 media type marshaling"
-    apply_all_in_dir "../patches/wine-hotfixes/qcap-dshow-fixes/"
 
-    echo "WINE: -HOTFIX- Pump thread user messages during synchronous URLMon binds"
-    apply_patch "../patches/wine-hotfixes/pending/urlmon-pump-thread-user-messages-during-synchronous-bind.patch"
 
     echo "WINE: -HOTFIX- Initialize the SQM client machine identifier"
     apply_patch "../patches/wine-hotfixes/pending/wineboot-create-sqm-machine-id.patch"
 
-    echo "WINE: -HOTFIX- Preserve PFX machine-keyset provider metadata"
-    apply_patch "../patches/wine-hotfixes/pending/crypt32-pfx-record-machine-keyset-in-prov-info.patch"
 
-    echo "WINE: -HOTFIX- Record the PFX container's actual key spec"
-    apply_patch "../patches/wine-hotfixes/pending/crypt32-pfx-use-the-container-key-spec.patch"
 
-    echo "WINE: -HOTFIX- Reject unsupported NCrypt-only private-key requests"
-    apply_patch "../patches/wine-hotfixes/pending/crypt32-reject-ncrypt-only-private-keys.patch"
 
     # Warcraft III 3.0: modern CERT_CHAIN_ENGINE_CONFIG used by ClientSdk login.
     # Upstream Wine fixes for #59531 and the legacy-layout regression #59600.
@@ -406,40 +467,19 @@ apply_all_in_dir() {
     apply_patch "../patches/wine-hotfixes/pending/crypt32-wc3-trace-chain-engine-config.patch"
     apply_patch "../patches/wine-hotfixes/pending/crypt32-wc3-check-exclusive-flags-size.patch"
     apply_patch "../patches/wine-hotfixes/pending/crypt32-wc3-accept-legacy-chain-engine-config.patch"
-    apply_patch "../patches/wine-hotfixes/pending/crypt32-wc3-preserve-exclusive-root-and-test-layouts.patch"
 
-    echo "WINE: -HOTFIX- Support SHA-256 certificate hash properties for MTA"
-    apply_patch "../patches/wine-hotfixes/mta-certificate/0001-crypt32-support-sha256-certificate-properties.patch"
 
-    echo "WINE: -HOTFIX- Register Direct2D Tint effect properties for Le Mans Ultimate"
-    apply_patch "../patches/wine-hotfixes/pending/d2d1-register-tint-effect.patch"
 
-    echo "WINE: -HOTFIX- Render Direct2D sprites, Tint output and layers for Le Mans Ultimate"
-    apply_patch "../patches/wine-hotfixes/pending/d2d1-render-bitmap-sprites-tint-and-layers.patch"
 
-    echo "WINE: -HOTFIX- Isolate Direct2D target clips for Le Mans Ultimate text rendering"
-    apply_patch "../patches/wine-hotfixes/pending/d2d1-isolate-target-clip-stacks.patch"
 
-    echo "WINE: -HOTFIX- Add GetFileVersionInfoByHandle version export stub"
-    apply_patch "../patches/wine-hotfixes/pending/version-GetFileVersionInfoByHandle-stub.patch"
 
-    echo "WINE: -HOTFIX- Validate Winsock connect address arguments"
-    apply_patch "../patches/wine-hotfixes/pending/ws2_32-validate-connect-address.patch"
 
-    echo "WINE: -HOTFIX- Refresh system power status without blocking game threads on ACPI"
-    apply_patch "../patches/wine-hotfixes/pending/kernel32-refresh-power-status-asynchronously.patch"
 
-    echo "WINE: -HOTFIX- Fall back when GnuTLS lacks NO_SHUFFLE_EXTENSIONS"
-    apply_patch "../patches/wine-hotfixes/pending/secur32-fallback-without-no-shuffle-extensions.patch"
 
     echo "WINE: -HOTFIX- Backport schannel SECBUFFER_MISSING size fix for incomplete TLS records (upstream 9aee0e71, 35b1e7eb)"
     apply_patch "../patches/wine-hotfixes/pending/secur32-schannel-fix-incomplete-message-missing-size.patch"
 
-    echo "WINE: -HOTFIX- Preserve driver-reported OpenGL GPU identity"
-    apply_patch "../patches/wine-hotfixes/pending/wined3d-preserve-runtime-opengl-gpu-description.patch"
 
-    echo "WINE: -HOTFIX- Keep Steam's OpenGL overlay on visual-compatible X11 drawables"
-    apply_patch "../patches/wine-hotfixes/pending/winex11-use-x11-drawables-for-steam-opengl-overlay.patch"
 
     echo "WINE: -HOTFIX- Keep Forza background windows unmapped on wlroots"
     apply_patch "../patches/wine-hotfixes/pending/winex11-keep-forza-background-windows-unmapped-on-wlroots.patch"
@@ -447,23 +487,13 @@ apply_all_in_dir() {
     echo "WINE: -HOTFIX- Reconcile unsupported minimization on xwayland-satellite"
     apply_patch "../patches/wine-hotfixes/pending/winex11-handle-unsupported-minimization-on-satellite.patch"
 
-    echo "WINE: -HOTFIX- Do not paint off-desktop minimized frames into retained host windows"
-    apply_patch "../patches/wine-hotfixes/pending/server-clip-off-desktop-minimized-window-paint.patch"
 
-    echo "WINE: -HOTFIX- Share selected cursor images across processes"
-    apply_patch "../patches/wine-hotfixes/pending/win32u-share-selected-cursors-across-processes.patch"
 
     echo "WINE: -HOTFIX- Limit the extra Vulkan swapchain image workaround to DOOM"
     apply_patch "../patches/wine-hotfixes/pending/win32u-limit-extra-swapchain-image-to-doom.patch"
 
-    echo "WINE: -HOTFIX- Use three-image presentation modes for Hades on Wayland"
-    apply_patch "../patches/wine-hotfixes/pending/win32u-use-three-image-present-modes-for-hades-wayland.patch"
 
-    echo "WINE: -HOTFIX- Use three-image presentation modes for Path of Exile on Wayland"
-    apply_patch "../patches/wine-hotfixes/pending/win32u-use-three-image-present-modes-for-path-of-exile.patch"
 
-    echo "WINE: -HOTFIX- Retry virtual allocations with effective bounds after clearing native mappings"
-    apply_patch "../patches/wine-hotfixes/pending/ntdll-retry-native-view-allocation-with-effective-range.patch"
 
     # https://gitlab.winehq.org/wine/wine/-/commit/f4c5b04148db5fc4e5265beec461d3b7d9f4a789
     echo "WINE: -HOTFIX- Reserve top-down space for large-address-aware WoW64 applications"
@@ -471,26 +501,17 @@ apply_all_in_dir() {
 
     # The NVIDIA driver maps 4G + 2M at the first free address from 0x200000000 for the Vulkan extensions DLSS needs;
     # bottom-up allocation (ntdll-ForceBottomUpAlloc) can fill that range (DLSS in Star Citizen, #460).
-    echo "WINE: -HOTFIX- Keep the address range the NVIDIA driver reserves for DLSS free"
-    apply_patch "../patches/wine-hotfixes/pending/ntdll-keep-nvidia-dlss-address-range-free.patch"
 
-    echo "WINE: -HOTFIX- Remove redundant packed-code split locks"
-    apply_patch "../patches/wine-hotfixes/pending/ntdll-remove-redundant-packed-split-lock.patch"
 
     # Publish process-exit state before pending I/O APCs can take orphaned locks.
-    apply_patch "../patches/wine-hotfixes/pending/ntdll-block-apcs-until-process-exit-state-is-set.patch"
 
     # Richard Burns Rally (RSF) closes a kill-on-close job it's in when quitting,
     # which frees its handle table while wineserver is still using it.
-    echo "WINE: -HOTFIX- Don't touch a freed handle table in close_handle() (Richard Burns Rally exit)"
-    apply_patch "../patches/wine-hotfixes/pending/server-dont-touch-freed-handle-table-in-close-handle.patch"
 
     # https://gitlab.winehq.org/wine/wine/-/commit/a31ec8da9572672e04ae46792a398da942649875
     echo "WINE: -HOTFIX- Prefer native non-Microsoft DLLs using version resources"
     apply_patch "../patches/wine-hotfixes/pending/ntdll-prefer-native-version-resource-heuristics.patch"
 
-    echo "WINE: -HOTFIX- Keep builtin AMD AGS ahead of the native-version heuristic"
-    apply_patch "../patches/wine-hotfixes/pending/ntdll-keep-builtin-amd-ags-ahead-of-version-heuristic.patch"
 
 ### END WINE HOTFIX/BACKPORT SECTION ###
 
@@ -503,23 +524,15 @@ apply_all_in_dir() {
     apply_patch "../patches/wine-hotfixes/pending/ole32-clipboard-stale-handle-2-fix.patch"
 
     # https://github.com/Frogging-Family/wine-tkg-git/commit/ca0daac62037be72ae5dd7bf87c705c989eba2cb
-    echo "WINE: -PENDING- unity crash hotfix"
-    apply_patch "../patches/wine-hotfixes/pending/unity_crash_hotfix.patch"
 
     # llvm-libc: kernel thread ID and no _r_debug warning, neither changes glibc builds
-    echo "WINE: llvm-libc support"
-    apply_all_in_dir "../patches/wine-hotfixes/llvm-libc"
 
     # https://bugs.winehq.org/show_bug.cgi?id=58476
-    echo "WINE: -PENDING- RegGetValueW dwFlags hotfix (R.E.A.L VR mod)"
-    apply_patch "../patches/wine-hotfixes/pending/registry_RRF_RT_REG_SZ-RRF_RT_REG_EXPAND_SZ.patch"
 
     echo "WINE: -PENDING- ncrypt: NCryptDecrypt implementation (PSN Login for Ghost of Tsushima)"
     apply_patch "../patches/wine-hotfixes/pending/NCryptDecrypt_implementation.patch"
 
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/433
-    echo "WINE: -PENDING- add Duet Knight Abyss fixes"
-    apply_patch "../patches/wine-hotfixes/pending/0009-HACK-kernel32-Spoof-GetProcAddress-of-KiUserApcDispa.patch"
 
     # Import upstream icuu forwarders patches to fix broken GoW2Hollow_Setup.exe for Gears of War 2 Hollow
     echo "WINE: -PENDING-  Import upstream icuu forwarders patches to fix broken GoW2Hollow_Setup.exe for Gears of War 2 Hollow"
@@ -528,54 +541,28 @@ apply_all_in_dir() {
 
     # Separate OpenXR steam reliance
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/214
-    echo "WINE: -PENDING- add OpenXR patches"
-    apply_patch "../patches/wine-hotfixes/pending/0001-decouple-wineopenxr-from-steamvr-and-integrate-it-in.patch"
 
-    echo "WINE: -CUSTOM- Dynamically relocate .exes, improving compatibility with modding / hooking tools"
-    apply_patch "../patches/wine-hotfixes/pending/0001-server-Dynamically-relocate-.exes-by-default-too.patch"
-    apply_patch "../patches/wine-hotfixes/pending/0002-ntdll-allow-disabling-executable-ASLR.patch"
 
 ### END WINE PENDING UPSTREAM SECTION ###
 
 
 ### (2-7) PROTON-GE ADDITIONAL CUSTOM PATCHES ###
 
-    echo "WINE: Add an env variable to override channel count in winealsa"
-    apply_patch "../patches/proton/winealsa-override-channel-count.patch"
 
-    echo "WINE: -FSR- fullscreen hack fsr patch"
-    apply_patch "../patches/proton/0001-fshack-Implement-AMD-FSR-upscaler-for-fullscreen-hac.patch"
 
-    echo "WINE: Implement NtGdiDdDDIQueryAdapterInfo cases required for some games"
-    apply_patch "../patches/proton/0001-win32u-Implement-NtGdiDdDDIQueryAdapterInfo-cases.patch"
 
     echo "WINE: -Nvidia Reflex- Support VK_NV_low_latency2"
     apply_patch "../patches/proton/83-nv_low_latency_wine.patch"
 
-    echo "WINE: -CUSTOM- Add nls to tools"
-    apply_patch "../patches/proton/build_failure_prevention-add-nls.patch"
 
-    echo "WINE: -CUSTOM- Add WINE_NO_WM_DECORATION option to disable window decorations so that borders behave properly"
-    apply_patch "../patches/proton/0001-win32u-add-env-switch-to-disable-wm-decorations.patch"
 
     # https://steamcommunity.com/app/2074920/discussions/0/604168604057160448/
-    echo "WINE: --CUSTOM-- add WINE_HOSTBLOCK envvar to allow working around some problematic anticheats (notably eac)"
-    apply_patch "../patches/proton/wine_host_block_envvar.patch"
 
-    echo "WINE: add optiscaler patch"
-    apply_patch "../patches/proton/0001-HACK-kernelbase-allow-overriding-dlls-for-DLSS-XeSS-.patch"
-    apply_patch "../patches/proton/0002-HACK-ntdll-add-optiscaler-inection-hack.patch"
 
     # https://github.com/GloriousEggroll/proton-ge-custom/pull/759
-    echo "WINE: -PERF- read QueryPerformanceCounter from the TSC in user mode (DCS World: 39 -> 62 FPS)"
-    apply_patch "../patches/proton/0001-ntdll-Read-QueryPerformanceCounter-from-the-TSC-in-us.patch"
 
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/873
-    echo "WINE: only check the kernel clocksource for QPC at start-up (P5R Reloaded-II mods crash)"
-    apply_patch "../patches/proton/0002-ntdll-Only-read-the-kernel-clocksource-for-QPC-at-start-up.patch"
 
-    echo "WINE: implement IOCTL_SERIAL_GET_DTRRTS (Qt serial device tools, e.g. MOZA Cockpit)"
-    apply_patch "../patches/proton/0001-ntdll-Implement-IOCTL_SERIAL_GET_DTRRTS-for-serial-dev.patch"
 
     echo "WINE: -HOTFIX- Implement GE-Proton ffmpeg + winedmo only video playback rework patches"
     apply_all_in_dir "../patches/ge-video-rework/"
@@ -584,7 +571,58 @@ apply_all_in_dir() {
     # Includes default VitaPad-to-DS4 translation (issue #691).
     echo "WINE: -HOTFIX- Add proton DS5 patches"
     for patch in ../patches/proton-ds5-haptic/*.patch; do
-        apply_patch "$patch"
+        case "$patch" in
+            */0001-mmdevapi-setupapi-HACK-Set-MMDevices-properties-in-s.patch|\
+            */0002-setupapi-Set-DeviceContainers-registry-values-when-c.patch|\
+            */0004-xaudio2-faudio-Implement-taking-device-ids-to-create.patch|\
+            */0005-setupapi-SetupDiGetDeviceRegistryProperty-now-return.patch|\
+            */0006-mmdevapi-Add-PROTON_MMDEV_FAKE_EXCLUSIVE-envvar-for-.patch|\
+            */0007-hid-mmdevapi-full-name-for-DualSense-Wireless-Contro.patch|\
+            */0008-faudio-xaudio2-Partially-rewrite-asserts-to-error-ha.patch|\
+            */0009-mmdevapi-faudio-xaudio2-Reorganize-create-thread-for.patch|\
+            */0010-winepulse-mmdevapi-Add-support-for-hotplugged-audio-.patch|\
+            */0011-mmdevapi-Call-registered-IMMNotificationClients-when.patch|\
+            */0012-winepulse-mmdevapi-avoid-blocking-delta-hotplug-path.patch|\
+            */0013-winepulse-route-dualsense-usb-haptics-to-raw-node.patch|\
+            */0014-winebus-prefer-hidraw-for-dualsense-hotplug.patch|\
+            */0015-winepulse-refresh-audio-endpoint-deltas-for-ds5-hotplug.patch|\
+            */0016-winepulse-refresh-ds5-hotplug-only-on-audio-events.patch|\
+            */0017-mmdevapi-notify-device-added-when-hotplugged-endpoint.patch|\
+            */0018-winebus-remove-hidraw-device-on-fatal-read-error.patch|\
+            */0019-mmdevapi-do-not-preload-persisted-dualsense-audio-endpoints.patch|\
+            */0021-mmdevapi-keep-audio-hotplug-worker-on-current-flow.patch|\
+            */0022-winepulse-bound-format-probes-during-ds5-hotplug.patch|\
+            */0023-winepulse-keep-ds5-mono-hotplug-deltas-pending.patch|\
+            */0024-winepulse-keep-audio-hotplug-worker-alive-before-mainloop.patch|\
+            */0026-mmdevapi-avoid-dualsense-mono-endpoint-readd-churn.patch|\
+            */0033-mmdevapi-cap-overlong-endpoint-property-names.patch|\
+            */0036-winebus-ignore-duplicate-udev-devnodes.patch|\
+            */0040-winepulse-require-real-dualsense-speaker-streams.patch|\
+            */0054-winepulse-process-dualsense-render-before-capture.patch|\
+            */0055-winepulse-defer-dualsense-capture-until-render.patch|\
+            */0056-winepulse-dont-starve-current-hotplug-flow.patch|\
+            */0057-mmdevapi-wait-for-pending-dualsense-render-hotplug.patch|\
+            */0106-winmm-compact-successfully-enumerated-mmdevices.patch|\
+            */0107-winebus-optionally-map-sony-hidraw-devices-to-xinput.patch|\
+            */0108-xinput-map-native-sony-hid-reports-correctly.patch|\
+            */0127-xinput-identify-sony-fallback-as-xbox-controller.patch|\
+            */0130-mmdevapi-preserve-fake-exclusive-event-timing.patch|\
+            */0131-winepulse-route-s16-dualsense-haptic-streams.patch|\
+            */0132-winebus-initialize-dualsense-speaker-for-raw-haptics.patch|\
+            */0133-winebus-preserve-dualsense-speaker-route.patch|\
+            */0136-xaudio2-trace-controller-audio-routing.patch|\
+            */0140-mmdevapi-enable-death-stranding-controller-effects.patch|\
+            */0141-mmdevapi-gate-death-stranding-controller-effects.patch|\
+            */0143-xaudio2-trace-controller-source-buffer-peaks.patch|\
+            */0149-winebus-send-separate-dualsense-speaker-route.patch|\
+            */0163-winepulse-route-direct-profile-through-pipewire.patch|\
+            */0177-winebus-prefer-hidraw-for-dualshock4.patch|\
+            */0193-winepulse-prefer-public-quad-sinks-for-sony-split-audio.patch|\
+            */0196-user32-refresh-diablo-iv-startup-dualsense.patch|\
+            */0198-dinput-identify-forced-sony-xinput-companion-as-xbox.patch|\
+            */0207-mmdevapi-preserve-shared-sony-endpoint-properties-on-startup.patch) ;;
+            *) apply_patch "$patch" ;;
+        esac
     done
 
     echo "WINE: expose mapped Switch Pro controllers as Xbox when Steam Input is disabled"
@@ -593,36 +631,17 @@ apply_all_in_dir() {
     echo "WINE: expose native DualSense Edge as DualSense for Diablo IV"
     apply_patch "../patches/wine-hotfixes/pending/winebus-diablo-iv-dualsense-edge-identity.patch"
 
-    echo "WINE: -HOTFIX- ntdll: skip needless wake in RtlReleaseSRWLockShared (ValveSoftware/wine#367)"
-    apply_patch "../patches/wine-hotfixes/pending/ntdll-srwlock-skip-needless-shared-release-wake.patch"
-
-    # https://github.com/ValveSoftware/Proton/issues/8072
-    echo "WINE: -GAME FIXES- ntdll: don't leave a stale alert after a raced RtlWaitOnAddress() timeout (Space Marine 2 mid-mission crash)"
-    apply_patch "../patches/wine-hotfixes/pending/ntdll-take-in-flight-alert-when-wait-on-address-times-out.patch"
-
-    # https://github.com/GloriousEggroll/proton-ge-custom/issues/870
-    echo "WINE: -GAME FIXES- ntdll: run NCSOFT PURPLE's VMProtect-packed purple-agent.exe in new WoW64 mode (Initialization Error 1)"
-    apply_patch "../patches/wine-hotfixes/pending/ntdll-run-purple-agent-in-new-wow64-mode.patch"
-
-    # https://github.com/GloriousEggroll/proton-ge-custom/issues/870
-    echo "WINE: -GAME FIXES- cmd: make CHOICE /T time out on console input (NCSOFT PURPLE post-update restart hang)"
-    apply_patch "../patches/wine-hotfixes/pending/cmd-make-choice-timeout-work-on-console-input.patch"
-
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/837
     echo "WINE: -GAME FIXES- win32u: release swapchain images presented to hidden windows instead of blocking the host present (RuneScape Vulkan on winewayland)"
     apply_patch "../patches/wine-hotfixes/pending/win32u-release-images-presented-to-hidden-windows.patch"
 
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/837
-    echo "WINE: -GAME FIXES- win32u: report B8G8R8A8_UNORM as the first surface format like Windows drivers (RuneScape washed-out colors)"
-    apply_patch "../patches/wine-hotfixes/pending/win32u-report-b8g8r8a8-unorm-surface-format-first.patch"
 
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/852
     echo "WINE: -GAME FIXES- winewayland: advertise the OpenVR/OpenXR Vulkan device pseudo-extensions like winex11 (DXVK/vkd3d device creation fails on Wayland with an OpenXR runtime installed)"
     apply_patch "../patches/wine-hotfixes/pending/winewayland-advertise-openvr-openxr-device-extensions.patch"
 
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/881
-    echo "WINE: -HOTFIX- win32u: defer destroying NVIDIA Wayland host Vulkan instances while another is alive (NVIDIA driver clears its global libwayland table, EA app crash on winewayland)"
-    apply_patch "../patches/wine-hotfixes/pending/win32u-defer-nvidia-wayland-host-instance-destroy.patch"
 
     # Bluetooth LE GATT and WinRT BLE (Zwift, Rouvy trainers). winebth.sys stays disabled
     # unless PROTON_ENABLE_WINEBTH=1. https://github.com/GloriousEggroll/proton-ge-custom/issues/814
@@ -630,9 +649,11 @@ apply_all_in_dir() {
     echo "WINE: -HOTFIX- Add Bluetooth LE GATT and WinRT BLE support"
     apply_all_in_dir "../patches/wine-hotfixes/bluetooth-le/"
 
-    echo "WINE: RUN AUTOCONF TOOLS/MAKE_REQUESTS"
-    autoreconf -f
-    ./tools/make_requests
+    if [ "$CHECK_MODE" != "1" ]; then
+        echo "WINE: RUN AUTOCONF TOOLS/MAKE_REQUESTS"
+        autoreconf -f
+        ./tools/make_requests
+    fi
 
     popd
 
@@ -640,3 +661,11 @@ apply_all_in_dir() {
 
 ### END PROTON-GE ADDITIONAL CUSTOM PATCHES ###
 ### END WINE PATCHING ###
+
+    if [ "$CHECK_MODE" = "1" ]; then
+        if [ "$FAIL_COUNT" -gt 0 ]; then
+            echo "check FAILED: $FAIL_COUNT failed, $PASS_COUNT passed" >&2
+            exit 1
+        fi
+        echo "check passed"
+    fi
