@@ -97,6 +97,12 @@ if [ "${1:-}" = "--check" ]; then
     SHADOW="$(mktemp -d "${PWD}/.wine-check-XXXXXX")"
     trap 'rm -rf "$SHADOW"' EXIT
     git -C wine archive HEAD | tar -x -C "$SHADOW"
+    # Make the shadow a git repo with committed base: bare `git apply`
+    # silently skips `diff --git` patches in an untracked dir (verified:
+    # 766 silent skips), which corrupts --check into cascade failures.
+    git -C "$SHADOW" init -q
+    git -C "$SHADOW" -c user.email=check@local -c user.name=check add -A
+    git -C "$SHADOW" -c user.email=check@local -c user.name=check commit -qm base
     echo "check: running WINE sections (2-0 through 2-7) against $SHADOW"
 fi
 
