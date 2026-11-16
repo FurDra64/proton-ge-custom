@@ -34,7 +34,7 @@ it again.
 diff --git a/dlls/winedmo/media_source.c b/dlls/winedmo/media_source.c
 --- a/dlls/winedmo/media_source.c
 +++ b/dlls/winedmo/media_source.c
-@@ -2792,7 +2792,14 @@ static HRESULT WINAPI scheme_handler_BeginCreateObject(IMFSchemeHandler *iface,
+@@ -2793,7 +2793,14 @@ static HRESULT WINAPI scheme_handler_BeginCreateObject(IMFSchemeHandler *iface,
      if (cancel_cookie)
          *cancel_cookie = NULL;
  
