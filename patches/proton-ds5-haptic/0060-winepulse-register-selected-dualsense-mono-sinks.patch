@@ -23,10 +23,10 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 index 11111111111..22222222222 100644
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -1207,6 +1207,34 @@ static BOOL is_dualsense_speaker_sink(const PhysDevice *dev)
+@@ -1424,6 +1424,34 @@ static BOOL is_dualsense_speaker_sink(const PhysDevice *dev)
              && strstr(dev->pulse_name, "Speaker__sink");
  }
- 
+
 +static BOOL pulse_name_looks_like_dualsense_speaker_sink(const char *name)
 +{
 +    return name && strstr(name, "alsa_output.usb-Sony_Interactive_Entertainment_")
@@ -57,11 +57,11 @@ index 11111111111..22222222222 100644
 +
  static BOOL is_dualsense_haptic_format(const struct pulse_stream *stream)
  {
-     return stream->dataflow == eRender && stream->ss.format == PA_SAMPLE_FLOAT32LE
-@@ -2883,6 +2911,15 @@ static NTSTATUS pulse_create_stream(void *args)
+     return stream->dataflow == eRender && stream->ss.rate == 48000 && stream->ss.channels == 4 &&
+@@ -3150,6 +3178,15 @@ static NTSTATUS pulse_create_stream(void *args)
+     connect_device = params->device;
+     if (dualsense_mono_candidate && (dualsense_speaker = get_dualsense_speaker_sink(params->device, TRUE)))
          connect_device = dualsense_speaker;
-     else if ((resolved_device = pulse_resolve_device_name(connect_device)))
-         connect_device = resolved_device;
 +
 +    if (!dualsense_mono_candidate && !haptic_candidate && pulse_stream_dualsense_mono_format(stream)
 +            && pulse_name_is_dualsense_speaker_sink(connect_device))
