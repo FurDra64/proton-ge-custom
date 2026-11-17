@@ -25,33 +25,21 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 @@ -180,6 +180,7 @@
  static pthread_cond_t g_phys_cond = PTHREAD_COND_INITIALIZER;
  static unsigned int g_haptic_hotplug_generation;
- static unsigned int g_dualsense_endpoint_generation;
+ static unsigned int g_dualsense_mono_hotplug_generation;
 +static unsigned int g_dualsense_mono_speaker_add_generation;
  static unsigned int g_phys_event_mask;
  static unsigned int g_phys_event_stale_render;
  static unsigned int g_phys_event_stale_capture;
-@@ -1173,6 +1174,12 @@
-             && (dev->product_id == 0x0ce6 || dev->product_id == 0x0df2);
- }
- 
-+static BOOL is_dualsense_speaker_sink(const PhysDevice *dev)
-+{
-+    return dev->flow == eRender && is_dualsense_audio_device(dev) && !dev->raw_haptic_target
-+            && strstr(dev->pulse_name, "Speaker__sink");
-+}
-+
- static BOOL is_dualsense_haptic_format(const struct pulse_stream *stream)
- {
-     return stream->dataflow == eRender && stream->ss.format == PA_SAMPLE_FLOAT32LE
-@@ -1601,7 +1608,11 @@
+@@ -1601,11 +1608,11 @@
  
          TRACE("PulseAudio endpoint %s was added.\n", debugstr_a(dev->pulse_name));
          if (flow == eRender && is_dualsense_audio_device(dev))
-+        {
+         {
              ++g_haptic_hotplug_generation;
-+            if (is_dualsense_speaker_sink(dev))
+             if (is_dualsense_speaker_sink(dev))
+-                ++g_dualsense_mono_hotplug_generation;
 +                ++g_dualsense_mono_speaker_add_generation;
-+        }
+         }
          list_remove(&dev->entry);
          list_add_tail(added, &dev->entry);
      }
@@ -63,11 +51,14 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
          if (!stream->period)
              pulse_add_stream_to_period(stream);
          if (stream->started && pulse_stream_ready(stream) && pa_stream_is_corked(stream->stream))
-@@ -2890,6 +2902,7 @@
-             stream->haptic_hotplug_generation = g_haptic_hotplug_generation;
+@@ -2890,9 +2902,9 @@
          if (dualsense_mono_candidate)
          {
+             g_phys_lock();
+             stream->haptic_hotplug_generation = g_haptic_hotplug_generation;
+-            stream->dualsense_mono_hotplug_generation = g_dualsense_mono_hotplug_generation;
 +            stream->dualsense_mono_hotplug_generation = g_dualsense_mono_speaker_add_generation;
+             g_phys_unlock();
              list_add_tail(&dualsense_mono_streams, &stream->dualsense_mono_entry);
              stream->dualsense_mono_registered = TRUE;
          }

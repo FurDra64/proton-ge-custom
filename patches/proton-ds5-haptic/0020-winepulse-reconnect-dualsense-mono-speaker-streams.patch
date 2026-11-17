@@ -25,12 +25,13 @@ connected controller.
 Normal game audio and the four-channel raw haptics path are unchanged.
 
 ---
- dlls/winepulse.drv/pulse.c | 277 +++++++++++++++++++++++++++++++++++++++++++--
- 1 file changed, 266 insertions(+), 11 deletions(-)
+
+ dlls/winepulse.drv/pulse.c | 286 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 275 insertions(+), 11 deletions(-)
 
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -57,6 +57,7 @@ struct pulse_stream
+@@ -82,6 +82,7 @@ struct pulse_stream
  {
      EDataFlow dataflow;
  
@@ -38,27 +39,32 @@ Normal game audio and the four-channel raw haptics path are unchanged.
      pa_stream *stream;
      snd_pcm_t *haptic_pcm;
      char *haptic_alsa_path;
-@@ -94,5 +94,12 @@ struct pulse_stream
+@@ -118,11 +119,16 @@ struct pulse_stream
      struct list packet_free_head;
      struct list packet_filled_head;
-+    struct list period_entry;
+     struct list period_entry;
 +    struct list dualsense_mono_entry;
-+    struct pulse_period *period;
+     struct pulse_period *period;
 +    BOOL dualsense_mono_registered;
 +    BOOL dualsense_mono_audio_active;
  };
-
+ 
+ static void pulse_write(struct pulse_stream *stream);
+ 
 +static struct list dualsense_mono_streams = LIST_INIT(dualsense_mono_streams);
 +
  typedef struct _ACPacket
-@@ -233,8 +240,14 @@ static BOOL is_dualsense_audio_device(const PhysDevice *dev);
+ {
+     struct list entry;
+@@ -261,11 +267,17 @@ static int pulse_cond_timedwait_ms(unsigned int timeout_ms)
+ static BOOL is_dualsense_audio_device(const PhysDevice *dev);
  static BOOL pulse_stream_wait_until_not(pa_mainloop *ml, pa_stream *stream, pa_stream_state_t wait_state, const char *what);
  static BOOL pulse_stream_valid(struct pulse_stream *stream);
 +static BOOL pulse_stream_dualsense_mono(const struct pulse_stream *stream);
 +static HRESULT pulse_dualsense_mono_reconnect(struct pulse_stream *stream);
 +static void pulse_reconnect_dualsense_mono_streams(struct pulse_period *current_period);
  static void convert_channel_map(const pa_channel_map *pa_map, WAVEFORMATEXTENSIBLE *fmt);
-
+ 
  static BOOL pulse_stream_ready(struct pulse_stream *stream)
  {
 -    return pulse_stream_valid(stream);
@@ -67,8 +73,10 @@ Normal game audio and the four-channel raw haptics path are unchanged.
 +
 +    return pa_stream_get_state(stream->stream) == PA_STREAM_READY;
  }
-@@ -858,10 +868,15 @@ static void silence_buffer(pa_sample_format_t format, BYTE *buffer, UINT32
-
+ 
+ static char *get_dualsense_speaker_sink(const char *preferred)
+@@ -887,10 +899,15 @@ static void silence_buffer(pa_sample_format_t format, BYTE *buffer, UINT32 bytes
+ 
  static BOOL pulse_stream_valid(struct pulse_stream *stream)
  {
 +    pa_stream_state_t state;
@@ -76,19 +84,19 @@ Normal game audio and the four-channel raw haptics path are unchanged.
      if (!stream->stream)
 -        return stream->dataflow == eRender && stream->haptic_alsa_path;
 +        return stream->dataflow == eRender && (stream->haptic_alsa_path || pulse_stream_dualsense_mono(stream));
-
+ 
 -    return pa_stream_get_state(stream->stream) == PA_STREAM_READY;
 +    state = pa_stream_get_state(stream->stream);
 +
 +    return state == PA_STREAM_READY || (stream->dataflow == eRender
 +            && (state == PA_STREAM_CREATING || pulse_stream_dualsense_mono(stream)));
  }
-
+ 
  static BOOL pulse_stream_haptic(struct pulse_stream *stream)
-@@ -1207,6 +1230,16 @@ static BOOL string_contains_dualsense_name(const char *name)
+@@ -1313,6 +1330,16 @@ static BOOL string_contains_dualsense_name(const char *name)
              || strstr(name, "Wireless Controller") || strstr(name, "Sony_Interactive_Entertainment"));
  }
-
+ 
 +static BOOL pulse_stream_dualsense_mono_format(const struct pulse_stream *stream)
 +{
 +    return stream->dataflow == eRender && stream->ss.channels == 1;
@@ -102,10 +110,10 @@ Normal game audio and the four-channel raw haptics path are unchanged.
  static void pulse_add_device(struct list *list, EDataFlow flow, pa_proplist *proplist, int index, EndpointFormFactor form,
                               UINT channel_mask, const char *pulse_name, const char *desc)
  {
-@@ -2039,6 +2072,18 @@ static HRESULT pulse_stream_connect_dualsense_speaker(struct pulse_stream *str
+@@ -2147,6 +2174,18 @@ static HRESULT pulse_stream_connect_dualsense_speaker(struct pulse_stream *strea
      return pulse_stream_connect_timeout(stream, pulse_name, NULL, period_bytes, 5000, FALSE);
  }
-
+ 
 +static void pulse_stream_disconnect(struct pulse_stream *stream)
 +{
 +    if (!stream->stream)
@@ -121,10 +129,10 @@ Normal game audio and the four-channel raw haptics path are unchanged.
  static HRESULT get_device_period_helper(EDataFlow flow, const char *pulse_name, REFERENCE_TIME *def, REFERENCE_TIME *min)
  {
      struct list *list = (flow == eRender) ? &g_phys_speakers : &g_phys_sources;
-@@ -2143,6 +2187,185 @@ static char *find_dualsense_haptic_alsa_path(void)
+@@ -2248,6 +2287,185 @@ static char *get_dualsense_haptic_alsa_path(const char *pulse_name, const struct
      return path;
  }
-
+ 
 +static char *get_dualsense_speaker_sink(const char *preferred)
 +{
 +    static struct list *const lists[] = { &g_phys_speakers_added, &g_phys_speakers, NULL };
@@ -307,21 +315,24 @@ Normal game audio and the four-channel raw haptics path are unchanged.
  static char *find_dualsense_haptic_alsa_path(void)
  {
      snd_pcm_info_t *info;
-@@ -2584,5 +2761,5 @@ static NTSTATUS pulse_create_stream(void *args)
+@@ -2685,7 +2903,7 @@ static NTSTATUS pulse_create_stream(void *args)
+     HRESULT hr;
      char *name, *haptic_target = NULL, *haptic_alsa_path = NULL, *dualsense_speaker = NULL;
      const char *connect_device;
 -    BOOL haptic_candidate;
 +    BOOL haptic_candidate, dualsense_mono_candidate;
  
      if (params->share == AUDCLNT_SHAREMODE_EXCLUSIVE) {
-@@ -2606,5 +2785,6 @@ static NTSTATUS pulse_create_stream(void *args)
+         params->result = AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED;
+@@ -2712,6 +2930,7 @@ static NTSTATUS pulse_create_stream(void *args)
      }
-
+ 
      stream->dataflow = params->flow;
 +    list_init(&stream->dualsense_mono_entry);
      for (i = 0; i < ARRAY_SIZE(stream->vol); ++i)
          stream->vol[i] = 1.f;
-@@ -2616,6 +2796,8 @@ static NTSTATUS pulse_create_stream(void *args)
+ 
+@@ -2724,6 +2943,8 @@ static NTSTATUS pulse_create_stream(void *args)
      haptic_candidate = is_dualsense_haptic_format(stream)
              && (string_contains_dualsense_name(params->device)
                      || (haptic_target = get_dualsense_haptic_target(params->device, stream)));
@@ -330,7 +341,7 @@ Normal game audio and the four-channel raw haptics path are unchanged.
      if (haptic_candidate)
      {
          stream->map.map[0] = PA_CHANNEL_POSITION_AUX0;
-@@ -2650,6 +2832,8 @@ static NTSTATUS pulse_create_stream(void *args)
+@@ -2758,6 +2979,8 @@ static NTSTATUS pulse_create_stream(void *args)
      stream->share = params->share;
      stream->flags = params->flags;
      connect_device = params->device;
@@ -339,14 +350,12 @@ Normal game audio and the four-channel raw haptics path are unchanged.
      if (haptic_candidate)
      {
          stream->haptic_alsa_path = strdup(haptic_alsa_path ? haptic_alsa_path : "");
-@@ -2677,8 +2861,16 @@ static NTSTATUS pulse_create_stream(void *args)
-         else
+@@ -2784,7 +3007,15 @@ static NTSTATUS pulse_create_stream(void *args)
              hr = E_OUTOFMEMORY;
      }
      else
--        hr = pulse_stream_connect(stream, connect_device, haptic_target, stream->period_bytes);
 +    {
-+        hr = pulse_stream_connect(stream, connect_device, haptic_target, stream->period_bytes);
+         hr = pulse_stream_connect(stream, connect_device, haptic_target, stream->period_bytes);
 +        if (FAILED(hr) && dualsense_mono_candidate)
 +        {
 +            TRACE("Keeping DualSense mono speaker stream pending for %s.\n", debugstr_a(connect_device));
@@ -356,12 +365,11 @@ Normal game audio and the four-channel raw haptics path are unchanged.
 +    }
      if (SUCCEEDED(hr)) {
          UINT32 unalign;
-         const pa_buffer_attr *attr = pa_stream_get_buffer_attr(stream->stream);
-@@ -2711,7 +2903,17 @@ static NTSTATUS pulse_create_stream(void *args)
+         const pa_buffer_attr *attr = pulse_stream_ready(stream) ? pa_stream_get_buffer_attr(stream->stream) : &stream->attr;
+@@ -2826,6 +3057,16 @@ static NTSTATUS pulse_create_stream(void *args)
                  }
              }
          }
--    }
 +
 +        stream->device = strdup(connect_device);
 +        if (dualsense_mono_candidate)
@@ -372,21 +380,22 @@ Normal game audio and the four-channel raw haptics path are unchanged.
 +            list_add_tail(&dualsense_mono_streams, &stream->dualsense_mono_entry);
 +            stream->dualsense_mono_registered = TRUE;
 +        }
-+    }
-
+     }
+ 
      *params->channel_count = stream->ss.channels;
-     *params->stream = (stream_handle)(UINT_PTR)stream;
-@@ -2744,4 +2949,9 @@ static NTSTATUS pulse_release_stream(void *args)
-     pulse_lock();
+@@ -2859,6 +3100,11 @@ static int write_buffer(struct pulse_stream *stream, BYTE *buffer, UINT32 bytes)
+     BYTE *end;
+ 
+     if (!bytes) return 0;
 +    if (stream->dualsense_mono_registered)
 +    {
 +        list_remove(&stream->dualsense_mono_entry);
 +        stream->dualsense_mono_registered = FALSE;
 +    }
-     if (stream->stream)
-     {
-     if (PA_STREAM_IS_GOOD(pa_stream_get_state(stream->stream))) {
-@@ -2771,6 +2981,7 @@ static NTSTATUS pulse_release_stream(void *args)
+ 
+     /* Adjust the buffer based on the volume for each channel */
+     channels = stream->ss.channels;
+@@ -3300,6 +3546,7 @@ static NTSTATUS pulse_release_stream(void *args)
      free(stream->peek_buffer);
      free(stream->haptic_buffer);
      free(stream->haptic_alsa_path);
@@ -394,7 +403,7 @@ Normal game audio and the four-channel raw haptics path are unchanged.
      free(stream);
      return STATUS_SUCCESS;
  }
-@@ -3186,15 +3497,21 @@ static NTSTATUS pulse_start(void *args)
+@@ -3341,16 +3588,22 @@ static NTSTATUS pulse_start(void *args)
              pulse_write(stream);
          }
      }
@@ -404,7 +413,7 @@ Normal game audio and the four-channel raw haptics path are unchanged.
 -        pulse_write(stream);
 +        if (pulse_stream_dualsense_mono(stream))
 +            pulse_dualsense_mono_reconnect(stream);
-
+ 
 -        if (pa_stream_is_corked(stream->stream))
 +        if (pulse_stream_ready(stream))
          {
@@ -423,7 +432,8 @@ Normal game audio and the four-channel raw haptics path are unchanged.
 +            }
          }
      }
-@@ -3469,6 +3587,17 @@ static NTSTATUS pulse_release_render_buffer(void *args)
+ 
+@@ -3626,6 +3879,17 @@ static NTSTATUS pulse_release_render_buffer(void *args)
      written_bytes = params->written_frames * pa_frame_size(&stream->ss);
      if (params->flags & AUDCLNT_BUFFERFLAGS_SILENT)
          silence_buffer(stream->ss.format, buffer, written_bytes);
@@ -438,6 +448,6 @@ Normal game audio and the four-channel raw haptics path are unchanged.
 +            pulse_dualsense_mono_reconnect_internal(stream, TRUE);
 +        }
 +    }
-
+ 
      if (stream->locked < 0)
          pulse_wrap_buffer(stream, buffer, written_bytes);

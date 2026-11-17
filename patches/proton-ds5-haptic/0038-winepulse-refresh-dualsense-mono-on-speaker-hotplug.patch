@@ -27,7 +27,7 @@ index 4cce019610518ad2b6722921231562dbab62fdae..60f65af7d465f746e7f1d8c8fcb22e2b
      unsigned int haptic_hotplug_generation;
 +    unsigned int dualsense_mono_hotplug_generation;
      void *locked_ptr;
-     BOOL just_underran, pa_started, update_timing_info_pending, rebase_write_index;
+     BOOL please_quit, just_started, just_underran;
      pa_usec_t mmdev_period_usec;
 @@ -181,6 +182,7 @@ static pa_mainloop *pulse_ml;
  static pthread_mutex_t g_phys_mutex;
@@ -49,7 +49,7 @@ index 4cce019610518ad2b6722921231562dbab62fdae..60f65af7d465f746e7f1d8c8fcb22e2b
 +
  static BOOL is_dualsense_haptic_format(const struct pulse_stream *stream)
  {
-     return stream->dataflow == eRender && stream->ss.format == PA_SAMPLE_FLOAT32LE
+     return stream->dataflow == eRender && stream->ss.rate == 48000 && stream->ss.channels == 4 &&
 @@ -1434,7 +1442,11 @@ static BOOL pulse_refresh_devices(EDataFlow flow)
              continue;
          TRACE("PulseAudio endpoint %s was removed.\n", debugstr_a(dev->pulse_name));
@@ -99,7 +99,7 @@ index 4cce019610518ad2b6722921231562dbab62fdae..60f65af7d465f746e7f1d8c8fcb22e2b
 +    return hr;
  }
  
- static HRESULT pulse_dualsense_pulse_haptic_reconnect(struct pulse_stream *stream)
+ static void pulse_reconnect_dualsense_mono_streams(struct pulse_period *current_period)
 @@ -3536,18 +3562,18 @@ static void pulse_reconnect_dualsense_mono_streams(struct pulse_period *current_
          return;
  

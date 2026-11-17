@@ -26,14 +26,6 @@ Normal game audio and the raw four-channel haptics ALSA path are unchanged.
 diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -81,6 +81,7 @@ struct pulse_period
- };
- 
- static struct list active_periods = LIST_INIT(active_periods);
-+static struct list dualsense_mono_streams = LIST_INIT(dualsense_mono_streams);
- 
- struct pulse_stream
- {
 @@ -306,6 +307,9 @@ static struct pulse_stream *handle_get_stream(stream_handle h)
      return (struct pulse_stream *)(UINT_PTR)h;
  }
@@ -41,9 +33,9 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 +static void remove_stream_from_period(struct pulse_stream *stream);
 +static void pulse_add_stream_to_period(struct pulse_stream *stream);
 +
- static const char *pulse_endpoint_id(const PhysDevice *dev)
+ static void dump_attr(const pa_buffer_attr *attr)
  {
-     return dev->endpoint_id ? dev->endpoint_id : dev->pulse_name;
+     TRACE("maxlength: %u\n", attr->maxlength);
 @@ -812,6 +816,9 @@ static BOOL pulse_stream_valid(struct pulse_stream *stream)
  {
      pa_stream_state_t state;
@@ -52,8 +44,8 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 +        return TRUE;
 +
      if (!stream->stream)
-         return stream->dataflow == eRender && stream->haptic_pcm && stream->haptic_alsa_path
-                 && stream->haptic_alsa_path[0];
+         return stream->dataflow == eRender && (stream->haptic_alsa_path
+                 || pulse_stream_dualsense_mono(stream) || pulse_stream_dualsense_pulse_haptic(stream));
 @@ -2289,6 +2296,68 @@ static char *get_dualsense_speaker_sink(const char *preferred)
      return direct_fallback;
  }
@@ -120,20 +112,8 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 +    return hr;
 +}
 +
- static char *find_dualsense_haptic_alsa_path(void)
+ static int g_phys_cond_timedwait_ms(unsigned int timeout_ms)
  {
-     snd_pcm_info_t *info;
-@@ -2888,6 +2953,11 @@ static NTSTATUS pulse_create_stream(void *args)
-         stream->device = strdup(connect_device);
-         if (dualsense_pulse_haptic_candidate || dualsense_mono_candidate)
-             stream->haptic_hotplug_generation = g_haptic_hotplug_generation;
-+        if (dualsense_mono_candidate)
-+        {
-+            list_add_tail(&dualsense_mono_streams, &stream->dualsense_mono_entry);
-+            stream->dualsense_mono_registered = TRUE;
-+        }
-     }
- 
-     *params->channel_count = stream->ss.channels;
+     struct timespec ts;
 -- 
 2.54.0
