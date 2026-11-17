@@ -30,7 +30,7 @@ index 77777777777..88888888888 100644
  
  static BOOL is_dualsense_speaker_sink(const PhysDevice *dev)
  {
--    return dev->flow == eRender && is_dualsense_audio_device(dev)
+-    return is_dualsense_audio_device(dev) && dev->flow == eRender
 -            && strstr(dev->pulse_name, "Speaker__sink");
 +    return dev->flow == eRender && strstr(dev->pulse_name, "Speaker__sink")
 +            && (is_dualsense_audio_device(dev)
@@ -39,17 +39,20 @@ index 77777777777..88888888888 100644
  }
  
  static BOOL is_dualsense_endpoint_speaker_sink(const PhysDevice *dev)
-@@ -1664,8 +1666,12 @@ static BOOL pulse_refresh_devices(EDataFlow flow)
+@@ -1664,12 +1666,15 @@ static BOOL pulse_refresh_devices(EDataFlow flow)
          if (pulse_find_device(&current, dev->pulse_name))
              continue;
          TRACE("PulseAudio endpoint %s was removed.\n", debugstr_a(dev->pulse_name));
 -        if (flow == eRender && is_dualsense_audio_device(dev))
 +        if (flow == eRender && (is_dualsense_audio_device(dev) || is_dualsense_speaker_sink(dev)))
-+        {
+         {
              ++g_haptic_hotplug_generation;
-+            if (is_dualsense_speaker_sink(dev))
+             if (is_dualsense_speaker_sink(dev))
++            {
+                 ++g_dualsense_mono_hotplug_generation;
 +                ++g_dualsense_mono_speaker_add_generation;
-+        }
++            }
+         }
          list_remove(&dev->entry);
          list_add_tail(removed, &dev->entry);
      }
@@ -62,16 +65,18 @@ index 77777777777..88888888888 100644
          {
              ++g_haptic_hotplug_generation;
              if (is_dualsense_speaker_sink(dev))
-@@ -2352,10 +2358,10 @@ static char *get_dualsense_speaker_sink(const char *preferred, BOOL require_spea
+@@ -2352,9 +2358,9 @@ static char *get_dualsense_speaker_sink(const char *preferred, BOOL require_spea
          {
              BOOL direct, speaker;
  
 -            if (!is_dualsense_audio_device(dev))
+-                continue;
+-
+-            speaker = is_dualsense_speaker_sink(dev);
 +            speaker = is_dualsense_speaker_sink(dev);
 +            if (!speaker && !is_dualsense_audio_device(dev))
-                 continue;
- 
--            speaker = is_dualsense_speaker_sink(dev);
++                continue;
++
              direct = strstr(dev->pulse_name, "Direct__Direct__sink") || (dev->raw_haptic_target && !speaker);
              if (require_speaker && !speaker)
                  continue;
