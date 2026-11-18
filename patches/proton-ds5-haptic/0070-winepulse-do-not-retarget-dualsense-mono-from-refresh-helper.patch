@@ -12,22 +12,22 @@ switches.
 Leave retargeting to pulse_get_endpoint_ids(), after it has committed added
 render devices into the active list.
 ---
- dlls/winepulse.drv/pulse.c | 14 +-------------
- 1 file changed, 1 insertion(+), 13 deletions(-)
+ dlls/winepulse.drv/pulse.c | 11 +----------
+ 1 file changed, 11 deletions(-)
 
 diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 index 99999999999..aaaaaaaaaaa 100644
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -1622,7 +1622,6 @@ static BOOL pulse_refresh_devices(EDataFlow flow)
+@@ -1749,7 +1749,6 @@ static BOOL pulse_refresh_devices(EDataFlow flow)
      struct list *active = flow == eRender ? &g_phys_speakers : &g_phys_sources;
      struct list *added = flow == eRender ? &g_phys_speakers_added : &g_phys_sources_added;
      struct list *removed = flow == eRender ? &g_phys_speakers_removed : &g_phys_sources_removed;
 -    BOOL dualsense_speaker_added = FALSE;
-     PhysDevice *dev, *next;
+     PhysDevice *dev, *next, *existing;
      pa_mainloop *ml;
      pa_context *ctx;
-@@ -1698,10 +1697,7 @@ static BOOL pulse_refresh_devices(EDataFlow flow)
+@@ -1838,10 +1837,7 @@ static BOOL pulse_refresh_devices(EDataFlow flow)
          {
              ++g_haptic_hotplug_generation;
              if (is_dualsense_speaker_sink(dev))
@@ -38,10 +38,10 @@ index 99999999999..aaaaaaaaaaa 100644
          }
          list_remove(&dev->entry);
          list_add_tail(added, &dev->entry);
-@@ -1714,13 +1710,6 @@ static BOOL pulse_refresh_devices(EDataFlow flow)
+@@ -1851,13 +1847,6 @@ static BOOL pulse_refresh_devices(EDataFlow flow)
      LIST_FOR_EACH_ENTRY_SAFE(dev, next, &current, PhysDevice, entry)
          pulse_dev_free(dev);
- 
+
 -    if (dualsense_speaker_added)
 -    {
 -        pulse_lock();
@@ -51,6 +51,6 @@ index 99999999999..aaaaaaaaaaa 100644
 -
      pthread_cond_broadcast(&g_phys_cond);
      return TRUE;
- 
--- 
+
+--
 2.54.0
