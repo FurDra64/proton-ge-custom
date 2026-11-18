@@ -18,13 +18,13 @@ publication before exposing the device. A missing event means no hotplug is
 pending, and removal wakes the event, so normal enumeration and disconnect do
 not acquire persistent state or a retry loop.
 ---
- dlls/setupapi/devinst.c | 69 +++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 69 insertions(+)
+ dlls/setupapi/devinst.c | 90 +++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 90 insertions(+)
 
 diff --git a/dlls/setupapi/devinst.c b/dlls/setupapi/devinst.c
 --- a/dlls/setupapi/devinst.c
 +++ b/dlls/setupapi/devinst.c
-@@ -2064,6 +2064,72 @@ static BOOL enable_mhwilds_usb_audio(void)
+@@ -421,6 +421,72 @@ static BOOL enable_mhwilds_usb_audio(void)
      return env && env[0] == '1' && !env[1];
  }
  
@@ -94,25 +94,44 @@ diff --git a/dlls/setupapi/devinst.c b/dlls/setupapi/devinst.c
 +    CloseHandle(event);
 +}
 +
- static void SETUPDI_AddDeviceInterfaces(struct device *device, HKEY key,
-     const GUID *guid, DWORD flags)
+ static BOOL is_linked(HKEY key)
  {
-@@ -2183,6 +2249,8 @@ static void SETUPDI_EnumerateMatchingInterfaces(HDEVINFO DeviceInfoSet,
-                         {
-                             WCHAR deviceClassStr[40];
+     DWORD linked, type, size;
+@@ -2151,5 +2151,17 @@ static void SETUPDI_EnumerateMatchingInterfaces(struct DeviceInfoSet *set, const GUID *class, const WCHAR *enum_str,
+         if (!(device = create_device(set, &dev_class, buf, FALSE)))
+             continue;
  
-+                            wait_for_sony_audio_endpoint(deviceKey, deviceInst);
++        /* Wait for the Sony USB audio speaker to be ready before announcing
++         * the Sony HID interface, so games do not see the pad before its
++         * headset endpoints exist. */
++        {
++            HKEY instance_key;
++            if (!RegOpenKeyExW(enum_key, buf, 0, KEY_QUERY_VALUE, &instance_key))
++            {
++                wait_for_sony_audio_endpoint(instance_key, buf);
++                RegCloseKey(instance_key);
++            }
++        }
 +
-                             len = sizeof(deviceClassStr);
-                             l = RegQueryValueExW(deviceKey, L"ClassGUID", NULL,
-                                     &dataType, (BYTE *)deviceClassStr, &len);
-@@ -2416,6 +2484,7 @@ static void SETUPDI_EnumerateMatchingDeviceInstances(struct DeviceInfoSet *set,
-                                     (!(flags & DIGCF_PRESENT) ||
-                                      is_device_instance_linked(subKey, interfacesKey, id)))
-                             {
-+                                wait_for_sony_audio_endpoint(subKey, id);
-                                 create_device(set, &deviceClass, id, FALSE);
-                             }
+         if (!(iface = SETUPDI_CreateDeviceInterface(device, class, refstr)))
+             ERR("Failed to create device interface for %s.\n", debugstr_w(path));
+@@ -2231,5 +2231,17 @@ static void SETUPDI_EnumerateDevices(HDEVINFO DeviceInfoSet, const GUID *class,
+         if (RegGetValueW(enum_key, id, L"ClassGUID", RRF_RT_REG_SZ, NULL, class_guid, &size)
+                 || !guid_from_string_w(class_guid, &dev_class))
+             continue;
  
++        /* Wait for the Sony USB audio speaker to be ready before announcing
++         * the Sony HID device, so games do not see the pad before its
++         * headset endpoints exist. */
++        {
++            HKEY instance_key;
++            if (!RegOpenKeyExW(enum_key, id, 0, KEY_QUERY_VALUE, &instance_key))
++            {
++                wait_for_sony_audio_endpoint(instance_key, id);
++                RegCloseKey(instance_key);
++            }
++        }
++
+         create_device(DeviceInfoSet, &dev_class, id, FALSE);
 -- 
 2.55.0
