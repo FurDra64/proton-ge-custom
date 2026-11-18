@@ -130,13 +130,12 @@ diff --git a/dlls/xinput1_3/main.c b/dlls/xinput1_3/main.c
      LeaveCriticalSection(&xinput_cs);
  
      return ret;
-@@ -1409,11 +1443,17 @@
+@@ -1437,13 +1471,20 @@
  
      EnterCriticalSection(&xinput_cs);
      if (!controllers[index].device) update_controller_list();
 -    if (!controllers[index].device)
 -        ret = ERROR_DEVICE_NOT_CONNECTED;
--    else if (!HidD_GetAttributes(controllers[index].device, &attr))
 +    if (!controllers[index].device && is_persistent_player1(index))
 +    {
 +        memset(&attr, 0, sizeof(attr));
@@ -144,15 +143,18 @@ diff --git a/dlls/xinput1_3/main.c b/dlls/xinput1_3/main.c
 +        attr.ProductID = 0x028e;
 +        attr.VersionNumber = 0x0114;
 +    }
-+    else if (!controllers[index].device || !HidD_GetAttributes(controllers[index].device, &attr))
++    else if (!controllers[index].device)
++        ret = ERROR_DEVICE_NOT_CONNECTED;
+     else if (flags & XINPUT_FLAG_GAMEPAD && controllers[index].caps.SubType != XINPUT_DEVSUBTYPE_GAMEPAD)
+         ret = ERROR_DEVICE_NOT_CONNECTED;
+     else if (!HidD_GetAttributes(controllers[index].device, &attr))
          ret = ERROR_DEVICE_NOT_CONNECTED;
 -    else
-+
 +    if (ret == ERROR_SUCCESS)
      {
          memset(caps, 0, sizeof(*caps));
  
-@@ -1427,6 +1467,11 @@
+@@ -1427,6 +1468,11 @@
  #if XINPUT_VER >= 3
          caps->Capabilities.Flags |= XINPUT_CAPS_VOICE_SUPPORTED;
  #endif
