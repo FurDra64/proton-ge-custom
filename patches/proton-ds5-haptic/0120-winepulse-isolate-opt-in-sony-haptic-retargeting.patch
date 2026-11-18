@@ -14,32 +14,32 @@ behavior: a raw stream belongs to its original physical connection and is
 invalidated when that device generation disappears. Mono controller-speaker
 stream hotplugging remains enabled in both modes.
 ---
- dlls/winepulse.drv/pulse.c | 26 ++++++++++++++++++++------
- 1 file changed, 20 insertions(+), 6 deletions(-)
+ dlls/winepulse.drv/pulse.c | 24 ++++++++++++++++++------
+ 1 file changed, 18 insertions(+), 6 deletions(-)
 
 diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -589,6 +589,7 @@ again:
+@@ -812,6 +812,7 @@ again:
+ 
  static BOOL pulse_refresh_devices(EDataFlow flow);
- static BOOL is_dualsense_speaker_sink(const PhysDevice *dev);
  static void pulse_retarget_dualsense_mono_streams(const char *preferred);
 +static BOOL use_pipewire_dualsense_haptic_target(void);
  static void pulse_retarget_dualsense_haptic_streams(const char *target);
  static void pulse_retarget_dualsense_haptic_streams_to_alsa(const char *path);
  static char *find_dualsense_haptic_alsa_path(void);
-@@ -613,6 +614,7 @@ static NTSTATUS pulse_get_endpoint_ids(void *args)
+@@ -839,6 +840,7 @@ static NTSTATUS pulse_get_endpoint_ids(void *args)
      PhysDevice *dev, *dev_next;
      BOOL delta = params->delta;
      BOOL find_dualsense_haptic_alsa = FALSE;
 +    BOOL retarget_haptic = use_pipewire_dualsense_haptic_target();
+     BOOL retarget_dualsense_mono = FALSE;
      char *dualsense_mono_target = NULL;
      char *dualsense_haptic_target = NULL;
-     char *dualsense_haptic_alsa_path = NULL;
-@@ -750,10 +752,10 @@ static NTSTATUS pulse_get_endpoint_ids(void *args)
-                     free(dualsense_mono_target);
-                     dualsense_mono_target = target;
-                 }
+@@ -970,10 +972,10 @@ static NTSTATUS pulse_get_endpoint_ids(void *args)
+                 retarget_dualsense_mono = TRUE;
+                 free(dualsense_mono_target);
+                 dualsense_mono_target = strdup(dev->pulse_name);
 -                if (!dev->raw_haptic_target)
 +                if (retarget_haptic && !dev->raw_haptic_target)
                      find_dualsense_haptic_alsa = TRUE;
@@ -49,10 +49,10 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
              {
                  char *target = strdup(dev->raw_haptic_target);
  
-@@ -801,10 +803,10 @@ static NTSTATUS pulse_get_endpoint_ids(void *args)
-                     free(dualsense_mono_target);
-                     dualsense_mono_target = target;
-                 }
+@@ -1017,10 +1019,10 @@ static NTSTATUS pulse_get_endpoint_ids(void *args)
+                 retarget_dualsense_mono = TRUE;
+                 free(dualsense_mono_target);
+                 dualsense_mono_target = strdup(dev->pulse_name);
 -                if (!dev->raw_haptic_target)
 +                if (retarget_haptic && !dev->raw_haptic_target)
                      find_dualsense_haptic_alsa = TRUE;
@@ -62,8 +62,8 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
              {
                  char *target = strdup(dev->raw_haptic_target);
  
-@@ -940,7 +942,8 @@ static BOOL pulse_stream_valid(struct pulse_stream *stream)
-     if (stream->dualsense_mono_registered)
+@@ -1132,7 +1134,8 @@ static BOOL pulse_stream_valid(struct pulse_stream *stream)
+     if (stream->dualsense_mono_stream || stream->dualsense_mono_registered)
          return TRUE;
  
 -    if (!stream->stream && stream->dualsense_haptic_registered)
@@ -72,10 +72,10 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
          return stream->dataflow == eRender;
  
      if (!stream->stream)
-@@ -3137,6 +3140,14 @@ static void pulse_haptic_invalidate(struct pulse_stream *stream, const char *rea
+@@ -3374,6 +3377,14 @@ static BOOL pulse_haptic_refresh_path(struct pulse_stream *stream)
+     char *alsa_path;
+     BOOL changed;
  
- static BOOL pulse_haptic_refresh_path(struct pulse_stream *stream)
- {
 +    if (!use_pipewire_dualsense_haptic_target())
 +    {
 +        if (stream->haptic_pcm && stream->haptic_hotplug_generation == g_haptic_hotplug_generation)
@@ -84,10 +84,10 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 +        return FALSE;
 +    }
 +
-     if (!stream->haptic_pcm)
-     {
-         pa_usec_t now;
-@@ -3467,7 +3477,8 @@ static NTSTATUS pulse_create_stream(void *args)
+     if (stream->haptic_path_check_time && now < stream->haptic_path_check_time)
+         return stream->haptic_pcm != NULL;
+ 
+@@ -3758,7 +3769,8 @@ static NTSTATUS pulse_create_stream(void *args)
              list_add_tail(&dualsense_mono_streams, &stream->dualsense_mono_entry);
              stream->dualsense_mono_registered = TRUE;
          }
