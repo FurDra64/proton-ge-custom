@@ -16,13 +16,13 @@ stream actually connected to.  That keeps the preferred sink synchronized with
 successful stream creation, not only with refresh callbacks.
 
 ---
- dlls/winepulse.drv/pulse.c | 23 +++++++++++++++++++----
- 1 file changed, 19 insertions(+), 4 deletions(-)
+ dlls/winepulse.drv/pulse.c | 21 ++++++++++++++++++---
+ 1 file changed, 18 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -2464,6 +2464,12 @@ static char *get_dualsense_speaker_sink(const char *preferred, BOOL require_spea
+@@ -2677,6 +2677,12 @@ static char *get_dualsense_speaker_sink(const char *preferred, BOOL require_spea
          }
      }
      g_phys_unlock();
@@ -35,14 +35,13 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
      if (fallback)
      {
          free(direct_fallback);
-@@ -3052,10 +3058,17 @@ static NTSTATUS pulse_create_stream(void *args)
+@@ -3354,8 +3360,15 @@ static NTSTATUS pulse_create_stream(void *args)
      stream->share = params->share;
      stream->flags = params->flags;
      connect_device = params->device;
 -    if (dualsense_mono_candidate && (dualsense_speaker = get_dualsense_speaker_sink(
 -            g_dualsense_mono_preferred_sink ? g_dualsense_mono_preferred_sink : params->device, TRUE)))
 -        connect_device = dualsense_speaker;
--    else if ((resolved_device = pulse_resolve_device_name(connect_device)))
 +    if (dualsense_mono_candidate)
 +    {
 +        const char *preferred = g_dualsense_mono_preferred_sink ? g_dualsense_mono_preferred_sink : params->device;
@@ -53,18 +52,17 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 +        if (dualsense_speaker)
 +            connect_device = dualsense_speaker;
 +    }
-+    else if ((resolved_device = pulse_resolve_device_name(connect_device)))
-         connect_device = resolved_device;
  
      if (!dualsense_mono_candidate && !haptic_candidate && pulse_name_is_dualsense_speaker_sink(connect_device))
-@@ -3145,6 +3151,8 @@ static NTSTATUS pulse_create_stream(void *args)
-             stream->haptic_hotplug_generation = g_haptic_hotplug_generation;
+@@ -3454,6 +3467,8 @@ static NTSTATUS pulse_create_stream(void *args)
+             stream->dualsense_pulse_haptic_registered = TRUE;
+         }
          if (dualsense_mono_candidate)
          {
 +            pulse_set_dualsense_mono_preferred_sink(connect_device);
 +
-             stream->dualsense_mono_hotplug_generation = g_dualsense_mono_speaker_add_generation;
-             list_add_tail(&dualsense_mono_streams, &stream->dualsense_mono_entry);
-             stream->dualsense_mono_registered = TRUE;
+             g_phys_lock();
+             stream->haptic_hotplug_generation = g_haptic_hotplug_generation;
+             stream->dualsense_mono_stream = TRUE;
 -- 
 2.54.0
