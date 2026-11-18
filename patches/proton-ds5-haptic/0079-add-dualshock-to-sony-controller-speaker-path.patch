@@ -55,7 +55,7 @@ index 33233f1a0b4152635338f9a2c52d1ac231db66ef..c70a9d6792f94db767b21e493c23ee7d
              wcsstr(device_path, L"VID_054C&PID_0DF2"));
  }
  
-@@ -729,7 +734,15 @@ static const WCHAR *dualsense_mono_endpoint_iname(const WCHAR *device_path)
+@@ -729,13 +734,21 @@ static const WCHAR *dualsense_mono_endpoint_iname(const WCHAR *device_path)
  
  static BOOL is_dualsense_mono_endpoint_name(const WCHAR *name)
  {
@@ -69,6 +69,12 @@ index 33233f1a0b4152635338f9a2c52d1ac231db66ef..c70a9d6792f94db767b21e493c23ee7d
 +
 +    return (wcsstr(name, L"DualSense") || wcsstr(name, L"Wireless Controller")) &&
 +            wcsstr(name, L"Internal Mono Speaker");
+ }
+ 
+ static BOOL is_dualsense_audioendpoint_name(const WCHAR *name)
+ {
+     return name && (wcsstr(name, L"DualSense Wireless Controller Speaker") ||
+             wcsstr(name, L"DualSense Edge Wireless Controller Speaker"));
  }
  
  enum dualsense_mono_model
