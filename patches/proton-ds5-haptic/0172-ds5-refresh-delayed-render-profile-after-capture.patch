@@ -20,7 +20,7 @@ new render node actually exists.
 diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -241,6 +241,44 @@
+@@ -234,6 +234,44 @@
      return FALSE;
  }
  
@@ -65,15 +65,16 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
  static NTSTATUS pulse_not_implemented(void *args)
  {
      return STATUS_SUCCESS;
-@@ -636,6 +674,7 @@
+@@ -859,7 +897,8 @@
      BOOL delta = params->delta;
      BOOL find_dualsense_haptic_alsa = FALSE;
      BOOL retarget_haptic = use_pipewire_dualsense_haptic_target();
 +    BOOL refresh_render_after_capture = FALSE;
+     BOOL retarget_dualsense_mono = FALSE;
      char *dualsense_mono_target = NULL;
      char *dualsense_haptic_target = NULL;
      char *dualsense_haptic_alsa_path = NULL;
-@@ -760,6 +799,11 @@
+@@ -984,6 +1023,11 @@
          pulse_get_endpoints(list_added, &endpoint, &offset, params->endpoints);
          pulse_get_endpoints(list_removed, &endpoint, &offset, params->endpoints);
  
@@ -85,7 +86,7 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
          LIST_FOR_EACH_ENTRY_SAFE(dev, dev_next, list_added, PhysDevice, entry) {
              if (params->flow == eRender && is_dualsense_speaker_sink(dev))
              {
-@@ -792,6 +836,12 @@
+@@ -1011,6 +1055,12 @@
          }
          params->more_data = list_count(other_list_added) + list_count(other_list_removed)
                  || (g_phys_event_mask & other_event_mask);
