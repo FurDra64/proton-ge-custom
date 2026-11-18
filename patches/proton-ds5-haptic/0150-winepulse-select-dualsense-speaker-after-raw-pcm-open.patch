@@ -22,7 +22,7 @@ channel so the existing game log reports whether the hidraw write succeeded.
 
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -29,11 +29,18 @@
+@@ -28,11 +28,18 @@
  #include <stdlib.h>
  #include <stdint.h>
  #include <errno.h>
@@ -41,15 +41,15 @@ channel so the existing game log reports whether the hidraw write succeeded.
  #include <alsa/asoundlib.h>
  #include <pulse/pulseaudio.h>
  
-@@ -142,6 +149,7 @@
-     unsigned int dualsense_mono_hotplug_generation;
+@@ -134,6 +141,7 @@ struct pulse_stream
+     BOOL dualsense_mono_stream;
      BOOL dualsense_mono_registered;
      BOOL dualsense_haptic_registered;
 +    BOOL speaker_route_selected;
+     BOOL dualsense_mono_audio_active;
  };
  
- static void pulse_write(struct pulse_stream *stream);
-@@ -2531,6 +2539,7 @@
+@@ -2729,6 +2737,7 @@ static void pulse_split_speaker_disconnect(struct pulse_stream *stream)
      stream->speaker_dropped_bytes = 0;
      stream->speaker_peak = 0.0f;
      stream->speaker_trace_time = 0;
@@ -57,7 +57,7 @@ channel so the existing game log reports whether the hidraw write succeeded.
  
      if (!stream->speaker_stream)
          return;
-@@ -3123,6 +3132,75 @@
+@@ -3347,6 +3356,75 @@ done:
      return err;
  }
  
@@ -133,7 +133,7 @@ channel so the existing game log reports whether the hidraw write succeeded.
  static HRESULT pulse_haptic_stream_connect(struct pulse_stream *stream, const char *alsa_path)
  {
      snd_pcm_hw_params_t *hw_params;
-@@ -3200,6 +3278,7 @@
+@@ -3424,6 +3502,7 @@ static HRESULT pulse_haptic_stream_connect(struct pulse_stream *stream, const ch
      free(sw_params);
      TRACE("Opened DualSense haptic PCM \"%s\" at %u Hz, %u channels.\n", alsa_path, rate, stream->ss.channels);
      stream->haptic_hotplug_generation = g_haptic_hotplug_generation;
@@ -141,7 +141,7 @@ channel so the existing game log reports whether the hidraw write succeeded.
      return S_OK;
  
  failed:
-@@ -3408,6 +3487,7 @@
+@@ -3682,6 +3761,7 @@ static void pulse_haptic_trace_channels(struct pulse_stream *stream, const int16
  static void pulse_split_speaker_write(struct pulse_stream *stream, const BYTE *src, UINT32 frames)
  {
      SIZE_T sample_size, bytes, max_queue, required, source_offset = 0;
@@ -149,7 +149,7 @@ channel so the existing game log reports whether the hidraw write succeeded.
      pa_usec_t now;
      UINT32 frame;
  
-@@ -3469,9 +3549,13 @@
+@@ -3743,9 +3823,13 @@ static void pulse_split_speaker_write(struct pulse_stream *stream, const BYTE *s
      {
          const BYTE *sample = src + source_offset * stream->ss.channels +
                  (frame * stream->ss.channels + 1) * sample_size;
@@ -163,7 +163,7 @@ channel so the existing game log reports whether the hidraw write succeeded.
          if (TRACE_ON(pulse) && stream->ss.format == PA_SAMPLE_FLOAT32LE)
          {
              float value;
-@@ -3483,6 +3567,9 @@
+@@ -3757,6 +3841,9 @@ static void pulse_split_speaker_write(struct pulse_stream *stream, const BYTE *s
      }
      stream->speaker_buffer_held += bytes;
  
