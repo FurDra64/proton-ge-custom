@@ -92,7 +92,7 @@ diff --git a/dlls/winebus.sys/main.c b/dlls/winebus.sys/main.c
                  if (is_dualsense_gamepad(desc.vid, desc.pid))
 -                    bus_unlink_devices_from_vid_pid(&event->device_created.desc, &usages);
 +                    bus_unlink_devices_from_identity(&event->device_created.desc, &usages);
-                 else if ((device = bus_find_device_from_vid_pid(FALSE, &event->device_created.desc, &usages)))
+                 if ((device = bus_find_device_from_vid_pid(FALSE, &event->device_created.desc, &usages)))
                      bus_unlink_hid_device(device);
                  device = bus_create_hid_device(&event->device_created.desc, event->device);
 -- 
