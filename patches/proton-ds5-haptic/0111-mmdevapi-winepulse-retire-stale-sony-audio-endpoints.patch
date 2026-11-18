@@ -128,10 +128,11 @@ diff --git a/dlls/mmdevapi/devenum.c b/dlls/mmdevapi/devenum.c
 diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -181,7 +181,6 @@ static struct list g_phys_audio_devices = LIST_INIT(g_phys_audio_devices);
+@@ -181,8 +181,7 @@ static struct list g_phys_audio_devices = LIST_INIT(g_phys_audio_devices);
  static pthread_mutex_t g_phys_mutex;
  static pthread_cond_t g_phys_cond = PTHREAD_COND_INITIALIZER;
  static unsigned int g_haptic_hotplug_generation;
+ static unsigned int g_dualsense_mono_hotplug_generation;
 -static unsigned int g_dualsense_endpoint_generation;
  static unsigned int g_dualsense_mono_speaker_add_generation;
  static char *g_dualsense_mono_preferred_sink;
