@@ -20,11 +20,12 @@ the complete fresh endpoint set expected by the default hotplug path.
 diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -181,6 +181,7 @@ static pa_mainloop *pulse_ml;
+@@ -178,7 +178,8 @@ static pa_mainloop *pulse_ml;
  static pthread_mutex_t g_phys_mutex;
  static pthread_cond_t g_phys_cond = PTHREAD_COND_INITIALIZER;
  static unsigned int g_haptic_hotplug_generation;
 +static unsigned int g_dualsense_endpoint_generation;
+ static unsigned int g_dualsense_mono_hotplug_generation;
  static unsigned int g_dualsense_mono_speaker_add_generation;
  static char *g_dualsense_mono_preferred_sink;
  static unsigned int g_phys_event_mask;
