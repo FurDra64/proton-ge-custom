@@ -204,15 +204,15 @@ and remove only the disconnected physical container during hot-unplug.
  
      if (!is_dualsense_audio_device(dev) || (dev->flow == eRender && !dev->raw_haptic_target
              && strstr(dev->pulse_name, "Speaker__sink")))
-@@ -1744,7 +1860,7 @@
-         }
+@@ -2086,7 +2202,7 @@
      }
      memcpy(dev->pulse_name, pulse_name, len + 1);
+ 
 -    if (!pulse_set_endpoint_id(dev))
 +    if (!pulse_set_endpoint_id(dev, list))
      {
-         pulse_dev_free(dev);
-         return;
+         free(dev->name);
+         free(dev->raw_haptic_target);
 --- a/dlls/mmdevapi/devenum.c
 +++ b/dlls/mmdevapi/devenum.c
 @@ -115,15 +115,6 @@
