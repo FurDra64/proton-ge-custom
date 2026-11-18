@@ -19,13 +19,13 @@ unchanged.
  1 file changed, 5 insertions(+), 1 deletion(-)
 
 diff --git a/dlls/mmdevapi/devenum.c b/dlls/mmdevapi/devenum.c
-index cb6bf9e8fb0..83c75ce58f3 100644
+index 763b805..df9d617 100644
 --- a/dlls/mmdevapi/devenum.c
 +++ b/dlls/mmdevapi/devenum.c
-@@ -802,7 +802,11 @@ static void MMDevice_Register(const WCHAR *instguid, const WCHAR *friendly_name,
-     {
-         WCHAR device_name[DEVICE_ID_LEN];
- 
+@@ -675,7 +675,11 @@ static void MMDevice_Register(const WCHAR *instguid, const WCHAR *friendly_name,
+             TRACE("Refreshing DualSense PnP AudioEndpoint registration for %s.\n", debugstr_w(friendly_name));
+             remove_dualsense_audioendpoint_devices();
+         }
 -        if (swprintf(device_name, ARRAY_SIZE(device_name), L"SWD\\MMDEVAPI\\{0.0.%u.00000000}.%s", flow, instguid) != -1)
 +        if (skip_audioendpoint)
 +        {
