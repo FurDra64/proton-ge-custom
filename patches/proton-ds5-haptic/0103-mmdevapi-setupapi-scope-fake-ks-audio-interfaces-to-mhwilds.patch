@@ -15,13 +15,13 @@ compatibility environment variable is enabled. Filtering in setupapi as well
 as mmdevapi also hides entries left in existing prefixes by older builds.
 ---
  dlls/mmdevapi/devenum.c | 9 ++++++++-
- dlls/setupapi/devinst.c | 10 ++++++++++
- 2 files changed, 18 insertions(+), 1 deletion(-)
+ dlls/setupapi/devinst.c | 9 ++++++++-
+ 2 files changed, 16 insertions(+), 2 deletions(-)
 
 diff --git a/dlls/mmdevapi/devenum.c b/dlls/mmdevapi/devenum.c
 --- a/dlls/mmdevapi/devenum.c
 +++ b/dlls/mmdevapi/devenum.c
-@@ -785,6 +785,13 @@ static BOOL is_dualsense_device_path(const WCHAR *device_path)
+@@ -616,6 +616,13 @@ static BOOL is_dualsense_device_path(const WCHAR *device_path)
              wcsstr(device_path, L"VID_054C&PID_0DF2"));
  }
  
@@ -35,7 +35,7 @@ diff --git a/dlls/mmdevapi/devenum.c b/dlls/mmdevapi/devenum.c
  static BOOL is_dualsense_mono_endpoint_name(const WCHAR *name)
  {
      if (!name)
-@@ -1249,7 +1256,7 @@ static void MMDevEnum_RegisterEndpoint(struct MMDevEnumImpl *This, EDataFlow flo
+@@ -1128,7 +1135,7 @@ static void MMDevice_Register(const WCHAR *instguid, const WCHAR *friendly_name,
              remove_dualsense_media_devices();
  
          // HACK on top of hack, create entries that MHWilds expects.
@@ -47,9 +47,9 @@ diff --git a/dlls/mmdevapi/devenum.c b/dlls/mmdevapi/devenum.c
 diff --git a/dlls/setupapi/devinst.c b/dlls/setupapi/devinst.c
 --- a/dlls/setupapi/devinst.c
 +++ b/dlls/setupapi/devinst.c
-@@ -2056,6 +2056,13 @@ DEFINE_GUID(DEVINTERFACE_AUDIO_RENDER, 0xe6327cad,0xdcec,0x4949,0xae,0x8a,0x99,
- DEFINE_GUID(DEVINTERFACE_AUDIO_CAPTURE, 0x2eef81be,0x33fa,0x4800,0x96,0x70,0x1c,0xd4,0x74,0x97,0x2c,0x3f);
- DEFINE_GUID(AM_KSCATEGORY_AUDIO, 0x6994ad04,0x93ef,0x11d0,0xa3,0xcc,0x00,0xa0,0xc9,0x22,0x31,0x96);
+@@ -418,4 +418,11 @@ static LPWSTR SETUPDI_CreateSymbolicLinkPath(LPCWSTR instanceId,
+     return ret;
+ }
  
 +static BOOL enable_mhwilds_usb_audio(void)
 +{
@@ -58,18 +58,16 @@ diff --git a/dlls/setupapi/devinst.c b/dlls/setupapi/devinst.c
 +    return env && env[0] == '1' && !env[1];
 +}
 +
- static void SETUPDI_AddDeviceInterfaces(struct device *device, HKEY key,
-     const GUID *guid, DWORD flags)
- {
-@@ -2068,6 +2075,9 @@ static void SETUPDI_AddDeviceInterfaces(struct device *device, HKEY key,
-     const GUID *SKIP_PRESENT_CHECK[] = {&DEVINTERFACE_AUDIO_RENDER, &DEVINTERFACE_AUDIO_CAPTURE, &AM_KSCATEGORY_AUDIO, NULL};
-     bool skip_present_check = false;
- 
-+    if (IsEqualGUID(guid, &AM_KSCATEGORY_AUDIO) && !enable_mhwilds_usb_audio())
-+        return;
-+
-     for (i = 0; SKIP_PRESENT_CHECK[i] ; i++)
-         if (IsEqualGUID(SKIP_PRESENT_CHECK[i], guid))
-         {
+ static BOOL is_linked(HKEY key)
+@@ -508,7 +515,7 @@ static struct device_iface *SETUPDI_CreateDeviceInterface(struct device *device,
+     if (is_linked(key))
+         iface->flags |= SPINT_ACTIVE;
+     else if (IsEqualGUID(class, &DEVINTERFACE_AUDIO_RENDER)
+             || IsEqualGUID(class, &DEVINTERFACE_AUDIO_CAPTURE)
+-            || IsEqualGUID(class, &AM_KSCATEGORY_AUDIO))
++            || (IsEqualGUID(class, &AM_KSCATEGORY_AUDIO) && enable_mhwilds_usb_audio()))
+     {
+         /* Fake entries instead of a real driver. See mmdevapi/devenum.c */
+         DWORD linked = 1;
 -- 
 2.55.0
