@@ -132,15 +132,14 @@ diff --git a/dlls/mf/tests/transform.c b/dlls/mf/tests/transform.c
  
      if (FAILED(hr = CoCreateInstance(&CLSID_MSH264DecoderMFT, NULL, CLSCTX_INPROC_SERVER,
              &IID_IMFTransform, (void **)&transform)))
-@@ -5776,7 +5780,7 @@
-     ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-     IMFMediaType_Release(input_type);
+@@ -5851,6 +5851,6 @@
+     check_mft_set_input_type(transform, input_type_desc, S_OK);
  
 -    output_type = transform_find_available_output_type(transform, &MFVideoFormat_NV12);
 +    output_type = transform_find_available_output_type(transform, subtype);
      hr = IMFMediaType_GetUINT64(output_type, &MF_MT_FRAME_SIZE, &frame_size);
      ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-     ok(frame_size == (input_frame_size ? (((UINT64)actual_width << 32) | actual_height)
+     ok(frame_size == (((UINT64)actual_width << 32) | actual_height), "Unexpected frame size %#I64x\n", frame_size);
 @@ -5789,7 +5793,7 @@
      hr = IMFTransform_ProcessMessage(transform, MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0);
      ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
@@ -171,7 +170,7 @@ diff --git a/dlls/mf/tests/transform.c b/dlls/mf/tests/transform.c
 +            output_type = transform_find_available_output_type(transform, subtype);
              hr = IMFMediaType_GetUINT64(output_type, &MF_MT_FRAME_SIZE, &frame_size);
              ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-             ok(frame_size == (((UINT64)aligned_width << 32) | aligned_height), "Unexpected frame size %#llx\n", frame_size);
+             ok(frame_size == (((UINT64)aligned_width << 32) | aligned_height), "Unexpected frame size %#I64x\n", frame_size);
  
 +            hr = IMFMediaType_GetUINT32(output_type, &MF_MT_DEFAULT_STRIDE, &stride);
 +            ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
