@@ -916,9 +916,10 @@ index 12c1a297312c000cd362bf916cc411030f33cbed..7c121942a6f587b1ed40c66f7a344462
  NTSTATUS demuxer_create( void *arg )
  {
      struct demuxer_create_params *params = arg;
-@@ -663,9 +663,27 @@ NTSTATUS demuxer_create( void *arg )
+@@ -684,10 +684,28 @@ NTSTATUS demuxer_create( void *arg )
      if (!(demuxer->ctx = avformat_alloc_context())) goto failed;
--    if (!(demuxer->ctx->pb = avio_alloc_context( NULL, 0, 0, params->context, unix_read_callback, NULL, unix_seek_callback ))) goto failed;
+-    if (!(demuxer->ctx->pb = avio_alloc_context( NULL, 0, 0, params->context, unix_read_callback, NULL,
+-                                                 params->context->length == (UINT64)-1 ? NULL : unix_seek_callback ))) goto failed;
 -
 -    if ((ret = avformat_open_input( &demuxer->ctx, NULL, NULL, NULL )) < 0)
 -    {
@@ -942,7 +943,8 @@ index 12c1a297312c000cd362bf916cc411030f33cbed..7c121942a6f587b1ed40c66f7a344462
 +    }
 +    else
 +    {
-+        if (!(demuxer->ctx->pb = avio_alloc_context( NULL, 0, 0, params->context, unix_read_callback, NULL, unix_seek_callback ))) goto failed;
++        if (!(demuxer->ctx->pb = avio_alloc_context( NULL, 0, 0, params->context, unix_read_callback, NULL,
++                                                 params->context->length == (UINT64)-1 ? NULL : unix_seek_callback ))) goto failed;
 +
 +        if ((ret = avformat_open_input( &demuxer->ctx, NULL, NULL, NULL )) < 0)
 +        {
@@ -969,9 +971,11 @@ index 12c1a297312c000cd362bf916cc411030f33cbed..7c121942a6f587b1ed40c66f7a344462
 +    demuxer_free_context( demuxer );
      free( demuxer );
      return STATUS_UNSUCCESSFUL;
-@@ -750,8 +786,7 @@ NTSTATUS demuxer_destroy( void *arg )
+@@ -777,9 +813,8 @@ NTSTATUS demuxer_destroy( void *arg )
      for (i = 0; i < demuxer->ctx->nb_streams; i++)
+     {
          av_bsf_free( &demuxer->streams[i].filter );
+     }
      free( demuxer->streams );
      params->context = demuxer->ctx->pb->opaque;
 -    avio_context_free( &demuxer->ctx->pb );
