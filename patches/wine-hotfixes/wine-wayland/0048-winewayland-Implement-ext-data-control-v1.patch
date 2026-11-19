@@ -664,11 +664,12 @@ diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv
 index a23e9614b2b..9fc35d4439c 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
-@@ -37,6 +37,7 @@
+@@ -37,7 +37,8 @@
  #include "xdg-output-unstable-v1-client-protocol.h"
  #include "xdg-shell-client-protocol.h"
  #include "wlr-data-control-unstable-v1-client-protocol.h"
 +#include "ext-data-control-v1-client-protocol.h"
+ #include "wlr-layer-shell-unstable-v1-client-protocol.h"
  #include "xdg-toplevel-icon-v1-client-protocol.h"
  #include "pointer-warp-v1-client-protocol.h"
  #include "alpha-modifier-v1-client-protocol.h"
@@ -685,9 +686,10 @@ index a23e9614b2b..9fc35d4439c 100644
          {
              struct wl_data_device *wl_data_device;
              struct wl_data_source *wl_data_source;
-@@ -187,6 +194,7 @@ struct wayland
+@@ -187,7 +194,8 @@ struct wayland
      struct zwp_relative_pointer_manager_v1 *zwp_relative_pointer_manager_v1;
      struct zwp_text_input_manager_v3 *zwp_text_input_manager_v3;
+     struct zwlr_layer_shell_v1 *zwlr_layer_shell_v1;
      struct zwlr_data_control_manager_v1 *zwlr_data_control_manager_v1;
 +    struct ext_data_control_manager_v1 *ext_data_control_manager_v1;
      struct wl_data_device_manager *wl_data_device_manager;
