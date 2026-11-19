@@ -35,9 +35,9 @@ diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayla
 index f91cff04354..14a5c3473e9 100644
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
-@@ -34,11 +34,21 @@
- 
- WINE_DEFAULT_DEBUG_CHANNEL(waylanddrv);
+@@ -123,11 +123,21 @@
+     TRACE("Initialized image descriptors, scRGB %p BT.2100 %p\n", scrgb_desc, bt2100_desc);
+ }
  
 +/* rountrip through WindowPosChanged to refresh the host window state */
 +static void update_window_state(HWND hwnd)
@@ -53,12 +53,11 @@ index f91cff04354..14a5c3473e9 100644
                                           uint32_t serial)
  {
      struct wayland_surface *surface;
--    BOOL should_post = FALSE, initial_configure = FALSE;
-+    BOOL should_post = FALSE, should_expose = FALSE;
+     BOOL should_post = FALSE, initial_configure = FALSE;
      struct wayland_win_data *data;
      HWND hwnd = private;
  
-@@ -48,18 +58,32 @@ static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg_
+@@ -137,18 +147,32 @@ static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg_
  
      /* Handle this event only if wayland_surface is still associated with
       * the target xdg_surface. */
@@ -94,19 +93,19 @@ index f91cff04354..14a5c3473e9 100644
  
      wayland_win_data_release(data);
  
-@@ -67,10 +91,7 @@ static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg_
+@@ -156,10 +180,7 @@ static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg_
  
      /* Flush the window surface in case there is content that we weren't
       * able to flush before due to the lack of the initial configure. */
 -    if (initial_configure)
 -    {
--        NtUserExposeWindowSurface(hwnd, 0, NULL, 0);
+-        NtUserExposeWindowSurface(hwnd, 0, NULL);
 -    }
-+    if (should_expose) NtUserExposeWindowSurface(hwnd, 0, NULL, 0);
++    if (should_expose) NtUserExposeWindowSurface(hwnd, 0, NULL);
  }
  
  static const struct xdg_surface_listener xdg_surface_listener =
-@@ -137,6 +158,64 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener =
+@@ -226,6 +247,64 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener =
      xdg_toplevel_handle_close
  };
  
@@ -152,7 +151,7 @@ index f91cff04354..14a5c3473e9 100644
 +    wayland_win_data_release(data);
 +
 +    update_window_state(hwnd);
-+    NtUserExposeWindowSurface(hwnd, 0, NULL, 0);
++    NtUserExposeWindowSurface(hwnd, 0, NULL);
 +}
 +
 +static void xdg_popup_handle_reposition(void *private, struct xdg_popup *xdg_popup, uint32_t token)
@@ -168,10 +167,10 @@ index f91cff04354..14a5c3473e9 100644
 +    xdg_popup_handle_reposition,
 +};
 +
- void wp_fractional_scale_handle_scale(void* user_data,
-                                       struct wp_fractional_scale_v1 *fractional_scale_v1,
-                                       uint32_t scale_fixed)
-@@ -160,16 +239,10 @@ void wp_fractional_scale_handle_scale(void* user_data,
+ static void zwlr_layer_surface_v1_handle_configure(void *private,
+                                                    struct zwlr_layer_surface_v1 *layer_surface,
+                                                    uint32_t serial, uint32_t width, uint32_t height)
+@@ -303,16 +382,10 @@ void wp_fractional_scale_handle_scale(void* user_data,
      /* reattach client surfaces as their rects have changed */
      update_client_surfaces(hwnd);
  
@@ -184,12 +183,12 @@ index f91cff04354..14a5c3473e9 100644
 -
      wayland_win_data_release(data);
  
-     NtUserExposeWindowSurface(hwnd, 0, NULL, 0);
+     NtUserExposeWindowSurface(hwnd, 0, NULL);
 +    update_window_state(hwnd);
  }
  
  static const struct wp_fractional_scale_v1_listener wp_fractional_scale_listener =
-@@ -368,47 +441,94 @@ err:
+@@ -575,50 +648,97 @@ err:
      ERR("Failed to assign toplevel role to wayland surface\n");
  }
  
@@ -273,6 +272,8 @@ index f91cff04354..14a5c3473e9 100644
 +    surface->role = WAYLAND_SURFACE_ROLE_POPUP;
 +
      wayland_surface_init_fractional_scale(surface, owner->window.scale);
+ 
+     wayland_surface_init_fractional_scale(surface, parent->window.scale);
 +    rect = map_rect_to_surface(surface, rect);
  
 -    surface->role = WAYLAND_SURFACE_ROLE_SUBSURFACE;
@@ -305,8 +306,11 @@ index f91cff04354..14a5c3473e9 100644
 +    ERR("Failed to assign popup role to wayland surface\n");
  }
  
- /**********************************************************************
-@@ -435,6 +555,23 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
+ struct wl_output *wayland_output_for_rect(const RECT *rect, RECT *physical_rect,
+                                           double *output_scale)
+@@ -817,7 +937,24 @@ switch (surface->role)
+     switch (surface->role)
+     {
      case WAYLAND_SURFACE_ROLE_NONE:
          break;
  
@@ -329,8 +333,7 @@ index f91cff04354..14a5c3473e9 100644
 +
      case WAYLAND_SURFACE_ROLE_TOPLEVEL:
          if (surface->xdg_toplevel_icon)
-         {
-@@ -457,16 +594,6 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
+@@ -841,24 +978,14 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
              surface->xdg_surface = NULL;
          }
          break;
@@ -344,10 +347,18 @@ index f91cff04354..14a5c3473e9 100644
 -
 -        surface->owner_hwnd = NULL;
 -        break;
-     }
  
-     memset(&surface->pending, 0, sizeof(surface->pending));
-@@ -612,12 +739,13 @@ static void wayland_surface_get_rect_in_monitor(struct wayland_surface *surface,
+     case WAYLAND_SURFACE_ROLE_LAYER:
+         if (surface->layer_menu) wayland_clear_layer_menu_hwnd(surface->hwnd);
+         if (surface->zwlr_layer_surface_v1)
+         {
+             zwlr_layer_surface_v1_destroy(surface->zwlr_layer_surface_v1);
+             surface->zwlr_layer_surface_v1 = NULL;
+         }
+         surface->layer_output = NULL;
+         surface->layer_menu = FALSE;
+         break;
+@@ -1007,12 +1134,13 @@ static void wayland_surface_get_rect_in_monitor(struct wayland_surface *surface,
   */
  static void wayland_surface_reconfigure_geometry(struct wayland_surface *surface, RECT rect)
  {
@@ -363,7 +374,7 @@ index f91cff04354..14a5c3473e9 100644
      {
          wayland_surface_get_rect_in_monitor(surface, &rect);
  
-@@ -627,16 +755,15 @@ static void wayland_surface_reconfigure_geometry(struct wayland_surface *surface
+@@ -1021,16 +1149,15 @@ static void wayland_surface_reconfigure_geometry(struct wayland_surface *surface,
           * fall back to an appropriately sized rect at the top-left. */
          if ((surface->current.state & WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED) &&
              !(surface->current.state & WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN) &&
@@ -385,7 +396,7 @@ index f91cff04354..14a5c3473e9 100644
          }
          TRACE("Window is too large for Wayland state, using subregion\n");
      }
-@@ -650,9 +777,10 @@ static void wayland_surface_reconfigure_geometry(struct wayland_surface *surface
+@@ -1045,9 +1172,10 @@ static void wayland_surface_reconfigure_geometry(struct wayland_surface *surface,
      if (!IsRectEmpty(&rect))
      {
          int width = rect.right - rect.left, height = rect.bottom - rect.top;
@@ -399,7 +410,7 @@ index f91cff04354..14a5c3473e9 100644
          if (surface->window.resizeable)
          {
              xdg_toplevel_set_min_size(surface->xdg_toplevel, 0, 0);
-@@ -755,42 +883,6 @@ static BOOL wayland_surface_reconfigure_xdg(struct wayland_surface *surface, REC
+@@ -1170,42 +1298,6 @@ static BOOL wayland_surface_reconfigure_xdg(struct wayland_surface *surface, REC
      return TRUE;
  }
  
@@ -442,7 +453,7 @@ index f91cff04354..14a5c3473e9 100644
  /**********************************************************************
   *          wayland_surface_reconfigure
   *
-@@ -811,14 +903,11 @@ BOOL wayland_surface_reconfigure(struct wayland_surface *surface)
+@@ -1225,18 +1317,15 @@ BOOL wayland_surface_reconfigure(struct wayland_surface *surface)
      {
      case WAYLAND_SURFACE_ROLE_NONE:
          break;
@@ -455,6 +466,10 @@ index f91cff04354..14a5c3473e9 100644
 -        if (!surface->wl_subsurface) break; /* surface role has been cleared */
 -        wayland_surface_reconfigure_subsurface(surface);
 -        break;
+     case WAYLAND_SURFACE_ROLE_LAYER:
+         if (!surface->zwlr_layer_surface_v1) break; /* surface role has been cleared */
+         if (!wayland_surface_reconfigure_layer(surface)) return FALSE;
+         break;
      }
  
      wayland_surface_reconfigure_size(surface, rect.right - rect.left, rect.bottom - rect.top);
@@ -462,16 +477,17 @@ diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv
 index e974ba12a1b..ccd2bd95f85 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
-@@ -84,7 +84,7 @@ enum wayland_surface_role
+@@ -87,8 +87,8 @@ enum wayland_surface_role
  {
      WAYLAND_SURFACE_ROLE_NONE,
      WAYLAND_SURFACE_ROLE_TOPLEVEL,
 -    WAYLAND_SURFACE_ROLE_SUBSURFACE,
 +    WAYLAND_SURFACE_ROLE_POPUP,
+     WAYLAND_SURFACE_ROLE_LAYER,
  };
  
  enum wayland_surface_ensure_type
-@@ -285,17 +285,19 @@ struct wayland_surface
+@@ -298,17 +298,19 @@ struct wayland_surface
      struct wayland_shm_buffer *big_icon_buffer;
  
      enum wayland_surface_role role;
@@ -493,16 +509,17 @@ index e974ba12a1b..ccd2bd95f85 100644
              HWND owner_hwnd;
          };
      };
-@@ -332,6 +334,8 @@ void wayland_surface_destroy(struct wayland_surface *surface);
+@@ -360,7 +362,9 @@ void wayland_surface_destroy(struct wayland_surface *surface);
  void wayland_surface_make_toplevel(struct wayland_surface *surface);
  void wayland_surface_make_subsurface(struct wayland_surface *surface,
                                       struct wayland_surface *parent);
 +void wayland_surface_make_popup(struct wayland_surface *surface,
 +                                struct wayland_surface *owner);
+ void wayland_surface_make_layer(struct wayland_surface *surface, const RECT *rect, BOOL menu);
  void wayland_surface_clear_role(struct wayland_surface *surface);
  void wayland_surface_attach_shm(struct wayland_surface *surface,
                                  struct wayland_shm_buffer *shm_buffer,
-@@ -355,6 +359,11 @@ static inline BOOL wayland_surface_is_toplevel(struct wayland_surface *surface)
+@@ -382,11 +386,16 @@ static inline BOOL wayland_surface_is_toplevel(struct wayland_surface *surface)
      return surface->role == WAYLAND_SURFACE_ROLE_TOPLEVEL && surface->xdg_toplevel;
  }
  
@@ -511,6 +528,11 @@ index e974ba12a1b..ccd2bd95f85 100644
 +    return surface->role == WAYLAND_SURFACE_ROLE_POPUP && surface->xdg_popup;
 +}
 +
+ static inline BOOL wayland_surface_is_layer(struct wayland_surface *surface)
+ {
+     return surface->role == WAYLAND_SURFACE_ROLE_LAYER && surface->zwlr_layer_surface_v1;
+ }
+ 
  /**********************************************************************
   *          Wayland SHM buffer
   */
@@ -518,16 +540,17 @@ diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
 index 55e245d74ce..7d36420afad 100644
 --- a/dlls/winewayland.drv/window.c
 +++ b/dlls/winewayland.drv/window.c
-@@ -186,7 +186,7 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
+@@ -195,8 +195,8 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
                 (!(exstyle & WS_EX_LAYERED) || data->layered_attribs_set);
  
      if (!visible) role = WAYLAND_SURFACE_ROLE_NONE;
+     else if (use_layer_shell) role = WAYLAND_SURFACE_ROLE_LAYER;
 -    else if (owner_surface) role = WAYLAND_SURFACE_ROLE_SUBSURFACE;
 +    else if (owner_surface) role = WAYLAND_SURFACE_ROLE_POPUP;
      else role = WAYLAND_SURFACE_ROLE_TOPLEVEL;
  
      /* we can temporarily clear the role of a surface but cannot assign a different one after it's set */
-@@ -212,6 +212,8 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
+@@ -221,6 +221,8 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
  
      surface->ensured_contents = WAYLAND_SURFACE_NOT_ENSURED;
  
@@ -536,13 +559,16 @@ index 55e245d74ce..7d36420afad 100644
      /* If the window is a visible toplevel make it a wayland
       * xdg_toplevel. Otherwise keep it role-less to avoid polluting the
       * compositor with empty xdg_toplevels. */
-@@ -220,16 +222,14 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
+@@ -228,18 +230,18 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat)
      case WAYLAND_SURFACE_ROLE_NONE:
          wayland_surface_clear_role(surface);
          break;
 +    case WAYLAND_SURFACE_ROLE_POPUP:
 +        wayland_surface_make_popup(surface, owner_surface);
 +        break;
+     case WAYLAND_SURFACE_ROLE_LAYER:
+         wayland_surface_make_layer(surface, &data->rects.window, layer_menu);
+         break;
      case WAYLAND_SURFACE_ROLE_TOPLEVEL:
          wayland_surface_make_toplevel(surface);
          break;
@@ -551,17 +577,17 @@ index 55e245d74ce..7d36420afad 100644
 -        break;
      }
  
--    wayland_win_data_get_config(data, &surface->window);
--
+     wayland_win_data_get_config(data, &surface->window);
+ 
      /* Size/position changes affect the effective pointer constraint, so update
       * it as needed. */
-     if (data->hwnd == NtUserGetForegroundWindow()) reapply_cursor_clipping();
-@@ -290,18 +290,13 @@ static void wayland_win_data_update_wayland_state(struct wayland_win_data *data)
+@@ -311,19 +311,14 @@ static void wayland_win_data_update_wayland_state(struct wayland_win_data *data)
      switch (surface->role)
      {
      case WAYLAND_SURFACE_ROLE_NONE:
 +    /* popups do not have any state to update */
 +    case WAYLAND_SURFACE_ROLE_POPUP:
+     case WAYLAND_SURFACE_ROLE_LAYER:
          break;
      case WAYLAND_SURFACE_ROLE_TOPLEVEL:
          if (!surface->xdg_surface) break; /* surface role has been cleared */
@@ -577,9 +603,12 @@ index 55e245d74ce..7d36420afad 100644
      }
  
      wl_display_flush(process_wayland.wl_display);
-@@ -432,16 +427,19 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
+@@ -586,27 +581,30 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
      struct wayland_win_data *data, *owner_data;
      BOOL managed, fullscreen = swp_flags & WINE_SWP_FULLSCREEN;
+     BOOL tray_menu = swp_flags & WINE_SWP_TRAY_MENU;
+     BOOL notification = FALSE;
+     BOOL use_layer_shell = FALSE;
  
 -    TRACE("hwnd %p new_rects %s after %p flags %08x\n", hwnd, debugstr_window_rects(new_rects), insert_after, swp_flags);
 -
@@ -587,10 +616,18 @@ index 55e245d74ce..7d36420afad 100644
       * may need to query win_data information about other HWNDs and thus
       * acquire the lock itself internally. */
      if (!(managed = is_window_managed(hwnd, swp_flags, fullscreen)) && surface) owner = owner_hint;
- 
 +    TRACE("hwnd %p owner %p new_rects %s after %p flags %08x\n", hwnd,
 +          owner, debugstr_window_rects(new_rects), insert_after, swp_flags);
 +
+     if (!tray_menu && surface && process_wayland.zwlr_layer_shell_v1)
+         notification = is_notification_window(hwnd, swp_flags, new_rects);
+     if ((tray_menu || notification) && surface && process_wayland.zwlr_layer_shell_v1)
+     {
+         managed = FALSE;
+         owner = NULL;
+         use_layer_shell = TRUE;
+     }
+ 
      if (!(data = wayland_win_data_get(hwnd))) return;
      owner_data = owner && owner != hwnd ? wayland_win_data_get(owner) : NULL;
      owner_surface = owner_data ? owner_data->wayland_surface : NULL;
