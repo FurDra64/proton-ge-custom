@@ -31,8 +31,11 @@ index a98d67d353a..f91cff04354 100644
  
      wl_display_flush(process_wayland.wl_display);
  }
-@@ -1150,6 +1152,86 @@ static void wayland_client_surface_update(struct client_surface *client)
-     wayland_win_data_release(data);
+@@ -1281,9 +1283,89 @@ static void wayland_client_surface_update(struct client_surface *client)
+     if (toplevel && visible)
+         wayland_client_surface_attach(surface, toplevel, &client->monitor_rect);
+     else
+         wayland_client_surface_attach(surface, NULL, NULL);
  }
  
 +static void dummy_buffer_release(void *data, struct wl_buffer *buffer)
@@ -127,7 +130,7 @@ index a98d67d353a..f91cff04354 100644
  
          /* Handle any processed configure request, to ensure the related
           * surface state is applied by the compositor. */
-@@ -1280,68 +1362,6 @@ done:
+@@ -1456,65 +1538,6 @@ done:
      wayland_win_data_release(toplevel_data);
  }
  
@@ -185,11 +188,8 @@ index a98d67d353a..f91cff04354 100644
 -        wayland_surface_attach_shm(surface, dummy_shm_buffer, damage);
 -        wl_surface_commit(surface->wl_surface);
 -    }
--    else
--    {
--        wayland_shm_buffer_unref(dummy_shm_buffer);
--    }
 -
+-    wayland_shm_buffer_unref(dummy_shm_buffer);
 -    if (damage) NtGdiDeleteObjectApp(damage);
 -}
 -
@@ -200,8 +200,9 @@ diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv
 index 51152743c8a..e974ba12a1b 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
-@@ -87,6 +87,13 @@ enum wayland_surface_role
+@@ -87,7 +87,14 @@ enum wayland_surface_role
      WAYLAND_SURFACE_ROLE_SUBSURFACE,
+     WAYLAND_SURFACE_ROLE_LAYER,
  };
  
 +enum wayland_surface_ensure_type
@@ -222,10 +223,9 @@ index 51152743c8a..e974ba12a1b 100644
      struct wayland_window_config window;
      int content_width, content_height;
      HCURSOR hcursor;
-@@ -337,7 +345,6 @@ RECT map_rect_from_surface(struct wayland_surface *surface, RECT rect);
+@@ -349,6 +357,5 @@ RECT map_rect_from_surface(struct wayland_surface *surface, RECT rect);
  POINT map_point_from_surface(struct wayland_surface *surface, POINT point);
- struct wayland_client_surface *wayland_client_surface_create(HWND hwnd);
- void wayland_client_surface_attach(struct wayland_client_surface *client, HWND toplevel);
+ void wayland_client_surface_attach(struct wayland_client_surface *client, HWND toplevel, const RECT *rect);
 -void wayland_surface_ensure_contents(struct wayland_surface *surface);
  void wayland_surface_set_title(struct wayland_surface *surface, LPCWSTR title);
  void wayland_surface_assign_icon(struct wayland_surface *surface);
