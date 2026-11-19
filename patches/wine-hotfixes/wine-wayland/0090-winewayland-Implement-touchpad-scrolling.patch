@@ -29,7 +29,7 @@ index 0fa7e225c7c..2bd6a4cc5f5 100644
  }
  
 @@ -285,9 +285,33 @@ static void pointer_handle_button(void *data, struct wl_pointer *wl_pointer,
-     NtUserSendHardwareInput(hwnd, 0, &input, 0);
+     NtUserSendHardwareInput(hwnd, SEND_HWMSG_RAWINPUT, &input, 0);
  }
  
 -static void pointer_handle_axis(void *data, struct wl_pointer *wl_pointer,
