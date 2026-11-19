@@ -34,7 +34,7 @@ diff --git a/dlls/winedmo/video_decoder.c b/dlls/winedmo/video_decoder.c
 index f73a0508989..2c1234b912d 100644
 --- a/dlls/winedmo/video_decoder.c
 +++ b/dlls/winedmo/video_decoder.c
-@@ -1463,11 +1463,10 @@ static HRESULT handle_stream_type_change(struct video_decoder *decoder, BOOL *ch
+@@ -1454,11 +1454,10 @@ static HRESULT handle_stream_type_change(struct video_decoder *decoder, BOOL *ch
      if (decoder->stream_type)
          IMFMediaType_Release(decoder->stream_type);
      decoder->stream_type = new_type;
@@ -53,7 +53,7 @@ diff --git a/dlls/mf/tests/transform.c b/dlls/mf/tests/transform.c
 index 9eb472a8f61..f551906ac54 100644
 --- a/dlls/mf/tests/transform.c
 +++ b/dlls/mf/tests/transform.c
-@@ -5759,12 +5759,12 @@ static void test_h264_decoder_alignment(BOOL input_frame_size, const GUID *subty
+@@ -5838,12 +5838,12 @@ static void test_h264_decoder_alignment(BOOL input_frame_size, const GUID *subty
      IMFSample *input_sample, *output_sample;
      const BYTE *h264_encoded_data;
      ULONG h264_encoded_data_len;
@@ -68,15 +68,15 @@ index 9eb472a8f61..f551906ac54 100644
      HRESULT hr;
  
      hr = CoInitialize(NULL);
-@@ -5800,6 +5800,7 @@ static void test_h264_decoder_alignment(BOOL input_frame_size, const GUID *subty
+@@ -5873,6 +5873,7 @@ static void test_h264_decoder_alignment(BOOL input_frame_size, const GUID *subty
+     hr = IMFMediaType_GetUINT64(output_type, &MF_MT_FRAME_SIZE, &frame_size);
      ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-     ok(frame_size == (input_frame_size ? (((UINT64)actual_width << 32) | actual_height)
-             : (((UINT64)1920 << 32) | 1080)), "Unexpected frame size %#llx\n", frame_size);
+     ok(frame_size == (((UINT64)actual_width << 32) | actual_height), "Unexpected frame size %#I64x\n", frame_size);
 +    initial_frame_size = frame_size;
  
      hr = IMFTransform_SetOutputType(transform, 0, output_type, 0);
      ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-@@ -5837,6 +5838,17 @@ static void test_h264_decoder_alignment(BOOL input_frame_size, const GUID *subty
+@@ -5910,6 +5910,17 @@ static void test_h264_decoder_alignment(BOOL input_frame_size, const GUID *subty
          }
          else if (hr == MF_E_TRANSFORM_STREAM_CHANGE)
          {
@@ -94,7 +94,7 @@ index 9eb472a8f61..f551906ac54 100644
              /* The H.264 decoder sends a format change once the aligned frame size is known. */
              output_type = transform_find_available_output_type(transform, subtype);
              hr = IMFMediaType_GetUINT64(output_type, &MF_MT_FRAME_SIZE, &frame_size);
-@@ -5858,6 +5870,17 @@ static void test_h264_decoder_alignment(BOOL input_frame_size, const GUID *subty
+@@ -5931,5 +5931,16 @@ static void test_h264_decoder_alignment(BOOL input_frame_size, const GUID *subty
              hr = IMFTransform_SetOutputType(transform, 0, output_type, 0);
              ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
              IMFMediaType_Release(output_type);
