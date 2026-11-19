@@ -13,16 +13,17 @@ diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
 index a8f40bc98dd..6afa988f001 100644
 --- a/dlls/win32u/window.c
 +++ b/dlls/win32u/window.c
-@@ -384,6 +384,9 @@ void add_window_client_surface( HWND hwnd, struct client_surface *surface )
- {
-     pthread_mutex_lock( &surfaces_lock );
- 
-+    /* due to client surface reuse, this element may already be in the list */
-+    if (!list_empty( &surface->entry )) list_remove( &surface->entry );
+@@ -501,7 +501,10 @@ void use_window_client_surface( struct client_surface *surface, BOOL use )
+     if (!surface->hwnd)
+         WARN( "surface %s has been detached already, ignoring.\n", debugstr_client_surface( surface ) );
+     else if (use)
+     {
++        /* due to client surface reuse, this element may already be in the list */
++        if (!list_empty( &surface->entry )) list_remove( &surface->entry );
 +
-     surface->hwnd = hwnd;
-     list_add_tail( &client_surfaces, &surface->entry );
-     surface->funcs->update( surface );
--- 
+         /* surface wasn't used, it shouldn't be in any list */
+         list_add_tail( &client_surfaces, &surface->entry );
+         client_surface_update_locked( surface );
+     }
+--
 2.55.0
-
