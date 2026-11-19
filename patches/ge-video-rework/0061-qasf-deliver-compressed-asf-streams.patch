@@ -131,7 +131,7 @@ diff --git a/dlls/qasf/asfreader.c b/dlls/qasf/asfreader.c
      }
  
      free(filter->file_name);
-@@ -526,13 +589,21 @@
+@@ -528,11 +591,22 @@
      {
          struct asf_stream *stream = filter->streams + i;
          IWMOutputMediaProps *props;
@@ -145,22 +145,21 @@ diff --git a/dlls/qasf/asfreader.c b/dlls/qasf/asfreader.c
              continue;
  
 +        stream->allocator_layout_valid = FALSE;
-+        if (FAILED(hr = IWMReaderAdvanced2_SetReceiveStreamSamples(reader_advanced, stream->number, compressed)))
++        if (FAILED(hr = IWMReaderAdvanced_SetReceiveStreamSamples(reader_advanced, stream->number, compressed)))
 +        {
 +            WARN("Failed to set compressed delivery for stream %u, hr %#lx\n", i, hr);
 +            break;
 +        }
 +
-         /* WMReader already paces async samples. Deliver qasf outputs from the
-          * callback thread so audio and video callbacks stay in timestamp order
-          * instead of drifting on separate delivery threads. */
-@@ -550,27 +621,30 @@
-             break;
-         }
++        /* WMReader already paces async samples. Deliver qasf outputs from the
++         * callback thread so audio and video callbacks stay in timestamp order
++         * instead of drifting on separate delivery threads. */
+         if (FAILED(hr = IMemAllocator_Commit(stream->source.pAllocator)))
+@@ -543,25 +617,28 @@
  
 -        if (!IsEqualGUID(&stream->source.pin.mt.majortype, &MEDIATYPE_Video)
--                && FAILED(hr = IWMReaderAdvanced2_SetAllocateForOutput(reader_advanced, i, TRUE)))
-+        if (FAILED(hr = IWMReaderAdvanced2_SetAllocateForOutput(reader_advanced, i,
+-                && FAILED(hr = IWMReaderAdvanced_SetAllocateForOutput(reader_advanced, i, TRUE)))
++        if (FAILED(hr = IWMReaderAdvanced_SetAllocateForOutput(reader_advanced, i,
 +                !compressed && !IsEqualGUID(&stream->source.pin.mt.majortype, &MEDIATYPE_Video))))
          {
              WARN("Failed to enable allocation for stream %u, hr %#lx\n", i, hr);
@@ -198,7 +197,7 @@ diff --git a/dlls/qasf/asfreader.c b/dlls/qasf/asfreader.c
 +            }
          }
  
-         if (FAILED(hr = IPin_NewSegment(stream->source.pin.peer, stream->seek.llCurrent, stream->seek.llStop, stream->seek.dRate)))
+         if (FAILED(hr = IPin_NewSegment(stream->source.pin.peer, 0, 0, 1)))
 @@ -650,12 +724,26 @@
          IMemAllocator *allocator, ALLOCATOR_PROPERTIES *req_props)
  {
@@ -501,10 +500,9 @@ diff --git a/dlls/qasf/tests/asfreader.c b/dlls/qasf/tests/asfreader.c
  START_TEST(asfreader)
  {
      CoInitializeEx(NULL, COINIT_MULTITHREADED);
-@@ -1024,6 +1202,7 @@
-     test_aggregation();
-     test_filesourcefilter();
+@@ -1120,5 +1298,6 @@
      test_filter_state();
+     test_seeking();
 +    test_compressed_output();
      test_threading(FALSE);
      test_threading(TRUE);
