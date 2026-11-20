@@ -142,10 +142,10 @@ diff --git a/include/wine/vulkan_driver.h b/include/wine/vulkan_driver.h
 index 1ad27af2ed5..3bf3688880f 100644
 --- a/include/wine/vulkan_driver.h
 +++ b/include/wine/vulkan_driver.h
-@@ -366,6 +366,7 @@ struct client_surface;
+@@ -391,6 +391,7 @@ struct client_surface;
  struct vulkan_driver_funcs
  {
-     VkResult (*p_vulkan_surface_create)(HWND, BOOL, const struct vulkan_instance *, VkSurfaceKHR *, struct client_surface **);
+     VkResult (*p_vulkan_surface_create)(struct client_surface *, const struct vulkan_instance *, VkSurfaceKHR *);
 +    VkResult (*p_vulkan_colorspace_configure)( VkColorSpaceKHR *, struct client_surface * );
      VkBool32 (*p_get_physical_device_presentation_support)(struct vulkan_physical_device *, uint32_t);
      void (*p_map_instance_extensions)( struct vulkan_instance_extensions *extensions );
