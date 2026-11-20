@@ -100,14 +100,30 @@ diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
      DWORD exstyle = NtUserGetWindowLongW(data->hwnd, GWL_EXSTYLE);
      DWORD style = NtUserGetWindowLongW(data->hwnd, GWL_STYLE);
  
-@@ -438,7 +435,22 @@
+@@ -440,6 +437,12 @@
+         server_decor = TRUE;
+     }
+ 
++    /* The host may not support minimization. Compute this before the role
++     * switch: the toplevel case below must already know whether to keep
++     * the existing geometry instead of replacing it. */
++    keep_minimized_geometry = role == WAYLAND_SURFACE_ROLE_TOPLEVEL &&
++                              should_keep_minimized_toplevel_mapped(surface, style) &&
++                              !wayland_surface_supports_minimize(surface);
+     /* If the window is a visible toplevel make it a wayland
+      * xdg_toplevel. Otherwise keep it role-less to avoid polluting the
+      * compositor with empty xdg_toplevels. */
+@@ -459,12 +460,24 @@
+                                         stack_below_parent);
+         break;
+     case WAYLAND_SURFACE_ROLE_TOPLEVEL:
+-        wayland_surface_make_toplevel(surface, server_decor);
++        if (!keep_minimized_geometry) wayland_surface_make_toplevel(surface, server_decor);
+         break;
      }
  
      surface->window.visible = visible;
 -    wayland_win_data_get_config(data, &surface->window);
-+    keep_minimized_geometry = role == WAYLAND_SURFACE_ROLE_TOPLEVEL &&
-+                              should_keep_minimized_toplevel_mapped(surface, style) &&
-+                              !wayland_surface_supports_minimize(surface);
 +    if (keep_minimized_geometry)
 +    {
 +        /* Without host minimization, the existing window is the only way to
@@ -122,17 +138,8 @@ diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
 +    }
 +    else wayland_win_data_get_config(data, &surface->window);
  
-     /* If the window is a visible toplevel make it a wayland
-      * xdg_toplevel. Otherwise keep it role-less to avoid polluting the
-@@ -459,7 +471,7 @@
-                                         stack_below_parent);
-         break;
-     case WAYLAND_SURFACE_ROLE_TOPLEVEL:
--        wayland_surface_make_toplevel(surface, server_decor);
-+        if (!keep_minimized_geometry) wayland_surface_make_toplevel(surface, server_decor);
-         break;
-     }
- 
+     if (role != WAYLAND_SURFACE_ROLE_NONE)
+         wayland_client_surfaces_attach(data, data->hwnd);
 @@ -495,6 +507,9 @@
            processing_config ? "processing" : "current",
            processing_config ? surface->processing.state : surface->current.state);

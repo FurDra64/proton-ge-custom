@@ -50,13 +50,14 @@ diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayla
      return NtUserIsWindowVisible(hwnd) || NtUserGetPresentRect(hwnd, &dummy, -1);
  }
  
-@@ -5245,11 +5241,13 @@ void wayland_client_surface_attach(struct wayland_client_surface *client, HWND toplevel)
+@@ -5512,11 +5508,13 @@ void wayland_client_surface_attach(struct wayland_client_surface *client, HWND toplevel, const RECT *rect)
+     {
          if (toplevel_data) wayland_win_data_release(toplevel_data);
-         return wayland_client_surface_attach(client, NULL);
+         return wayland_client_surface_attach(client, NULL, NULL);
      }
 -    if (surface->role == WAYLAND_SURFACE_ROLE_TOPLEVEL && surface->window.minimized)
 -    {
--        wayland_client_surface_attach(client, NULL);
+-        wayland_client_surface_attach(client, NULL, NULL);
 -        return;
 -    }
 +    /* The compositor minimizes the whole surface tree. Preserve an existing
@@ -68,7 +69,7 @@ diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayla
 +        goto done;
  
      stack_above_parent = wayland_client_surface_should_stack_above_parent(
-             surface, client, hwnd, toplevel, toplevel_data->content_over_producer);
+             surface, client, client->client.hwnd, toplevel, toplevel_data->content_over_producer);
 diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
 --- a/dlls/winewayland.drv/window.c
 +++ b/dlls/winewayland.drv/window.c
@@ -113,9 +114,9 @@ diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
      if ((swp_flags & SWP_HIDEWINDOW) && data->is_fullscreen && !(style & WS_MINIMIZE) &&
          (client || wayland_surface_has_hwnd_dmabuf_content(surface)))
          visible = TRUE;
-@@ -486,12 +463,10 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *data,
-         break;
-     }
+@@ -489,12 +486,10 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *data,
+     surface->window.visible = visible;
+     wayland_win_data_get_config(data, &surface->window);
  
 -    if (role != WAYLAND_SURFACE_ROLE_NONE && !window_or_root_minimized(data->hwnd))
 +    if (role != WAYLAND_SURFACE_ROLE_NONE)
