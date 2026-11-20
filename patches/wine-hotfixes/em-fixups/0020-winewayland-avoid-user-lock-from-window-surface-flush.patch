@@ -19,23 +19,23 @@ actual attachment topology.
 diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
 --- a/dlls/winewayland.drv/window.c
 +++ b/dlls/winewayland.drv/window.c
-@@ -1650,7 +1650,6 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
+@@ -1827,7 +1827,6 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
  {
      struct wayland_surface *wayland_surface;
      struct wayland_win_data *data;
 -    HWND toplevel = NtUserGetAncestor(hwnd, GA_ROOT);
      BOOL committed = FALSE;
      BOOL content_over_changed;
- 
-@@ -1715,7 +1714,8 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
+
+@@ -1899,7 +1898,8 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
          {
              if (!shm_buffer || content_over_changed ||
                  (content_over_producer && data->client_surface->stack_above_parent))
--                wayland_client_surface_attach(data->client_surface, toplevel);
+-                wayland_client_surface_attach(data->client_surface, toplevel, NULL);
 +                wayland_client_surface_attach(data->client_surface,
-+                                              data->client_surface->toplevel);
++                                              data->client_surface->toplevel, NULL);
          }
          else if (shm_buffer)
-             wayland_client_surface_attach(data->client_surface, NULL);
--- 
+             wayland_client_surface_attach(data->client_surface, NULL, NULL);
+--
 2.53.0
