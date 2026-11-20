@@ -80,7 +80,7 @@ index f8a2b0a8fd4..370585f591d 100644
                  dummy_buffer = wayland_surface_create_dummy_buffer(wayland_surface,
                                                                     WL_SHM_FORMAT_ARGB8888,
                                                                     &dummy_damage);
-@@ -1486,13 +1488,11 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
+@@ -1658,13 +1658,11 @@ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffe
      }
  
      /* An attached client stays attached on GDI commits. Detaching would flash
@@ -91,7 +91,7 @@ index f8a2b0a8fd4..370585f591d 100644
 +     * the empty GDI buffer. Lifecycle callbacks clear dead client surfaces. */
 +    if (committed && data->client_surface && !window_client_surface_attached(data) &&
 +        !window_client_surface_pending_first_frame(data))
-         wayland_client_surface_attach(data->client_surface, NULL);
+         wayland_client_surface_attach(data->client_surface, NULL, NULL);
 -        data->client_surface = NULL;
 -    }
 +
