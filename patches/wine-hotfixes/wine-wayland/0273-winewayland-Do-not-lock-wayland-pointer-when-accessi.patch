@@ -92,18 +92,21 @@ index 7145e78ee04..5badfb61ae8 100644
  
      TRACE("hwnd=%p axis=%u value120=%d\n", hwnd, axis, value120);
  }
-@@ -549,17 +540,12 @@ static void relative_pointer_v1_relative_motion(void *private,
+@@ -551,20 +540,16 @@ static void relative_pointer_v1_relative_motion(void *private,
          raw_y = screen_y;
      }
  
 -    pthread_mutex_lock(&pointer->mutex);
 -
-     frame->dx_raw += raw_x;
-     frame->dy_raw += raw_y;
-     frame->dx += screen_x;
-     frame->dy += screen_y;
--
-     frame->flags |= WAYLAND_POINTER_FRAME_RELATIVE;
+     if (pointer->relative_mode)
+     {
+         frame->dx_raw += raw_x;
+         frame->dy_raw += raw_y;
+         frame->dx += screen_x;
+         frame->dy += screen_y;
+ 
+         frame->flags |= WAYLAND_POINTER_FRAME_RELATIVE;
+     }
  
 -    pthread_mutex_unlock(&pointer->mutex);
 -
