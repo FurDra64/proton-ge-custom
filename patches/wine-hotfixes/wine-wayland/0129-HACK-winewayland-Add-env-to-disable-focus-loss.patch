@@ -13,7 +13,7 @@ diff --git a/dlls/winewayland.drv/wayland_keyboard.c b/dlls/winewayland.drv/wayl
 index 9ec1a061967..423626370e5 100644
 --- a/dlls/winewayland.drv/wayland_keyboard.c
 +++ b/dlls/winewayland.drv/wayland_keyboard.c
-@@ -955,6 +955,20 @@ static void keyboard_handle_enter(void *private, struct wl_keyboard *wl_keyboard
+@@ -1003,6 +1003,20 @@ static void keyboard_handle_enter(void *private, struct wl_keyboard *wl_keyboard
      wayland_win_data_release(data);
  }
  
@@ -31,10 +31,10 @@ index 9ec1a061967..423626370e5 100644
 +    return disabled;
 +}
 +
- static void keyboard_handle_leave(void *private, struct wl_keyboard *wl_keyboard,
+ static void keyboard_handle_leave(void *data, struct wl_keyboard *wl_keyboard,
                                    uint32_t serial, struct wl_surface *wl_surface)
  {
-@@ -994,7 +1008,7 @@ static void keyboard_handle_leave(void *private, struct wl_keyboard *wl_keyboard
+@@ -1045,7 +1059,7 @@ static void keyboard_handle_leave(void *data, struct wl_keyboard *wl_keyboard,
               * directly once it's updated to not explicitly deactivate the old
               * foreground window when both the old and new foreground windows
               * are in the same non-current thread. */
