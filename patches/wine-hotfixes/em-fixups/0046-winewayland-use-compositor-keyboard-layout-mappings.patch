@@ -132,15 +132,23 @@ diff --git a/dlls/winewayland.drv/wayland_keyboard.c b/dlls/winewayland.drv/wayl
      else
      {
          ERR("Failed to find Xkb Layout for group %d\n", xkb_group);
-@@ -767,8 +822,9 @@ static void set_current_xkb_group(xkb_layout_index_t xkb_group)
+@@ -802,11 +857,14 @@ static void set_current_xkb_group(xkb_layout_index_t xkb_group)
+     if (hkl == keyboard_hkl) return;
      keyboard_hkl = hkl;
  
-     TRACE("Changing keyboard layout to %p\n", hkl);
--    NtUserPostMessage(keyboard->focused_hwnd, WM_INPUTLANGCHANGEREQUEST, 0 /*FIXME*/,
--                      (LPARAM)keyboard_hkl);
+-    pthread_mutex_lock(&text_input->mutex);
+-    ime = text_input->focused_hwnd == keyboard->focused_hwnd;
+-    pthread_mutex_unlock(&text_input->mutex);
+-
+-    activate_keyboard_hkl(keyboard->focused_hwnd, ime);
 +    if (keyboard->focused_hwnd)
-+        NtUserPostMessage(keyboard->focused_hwnd, WM_INPUTLANGCHANGEREQUEST, 0 /*FIXME*/,
-+                          (LPARAM)keyboard_hkl);
++    {
++        pthread_mutex_lock(&text_input->mutex);
++        ime = text_input->focused_hwnd == keyboard->focused_hwnd;
++        pthread_mutex_unlock(&text_input->mutex);
++
++        activate_keyboard_hkl(keyboard->focused_hwnd, ime);
++    }
  }
  
  static BOOL find_xkb_layout_variant(const char *name, const char **layout, const char **variant)
