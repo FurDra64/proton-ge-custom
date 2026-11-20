@@ -719,16 +719,14 @@ index c06899375981043953bdc59ad8721a29f6787842..78145b6ed849e1b2cec6ffbc1698dfe6
  BOOL wayland_surface_reconfigure(struct wayland_surface *surface);
  BOOL wayland_surface_config_is_compatible(struct wayland_surface_config *conf, RECT rect,
                                            enum wayland_surface_config_state state);
-@@ -549,6 +553,9 @@ RECT map_rect_to_surface(struct wayland_surface *surface, RECT rect);
+@@ -539,4 +543,7 @@ POINT map_point_to_surface(struct wayland_surface *surface, POINT point);
  POINT map_point_to_surface(struct wayland_surface *surface, POINT point);
  RECT map_rect_from_surface(struct wayland_surface *surface, RECT rect);
  POINT map_point_from_surface(struct wayland_surface *surface, POINT point);
 +BOOL wayland_surface_has_hwnd_dmabuf_content(struct wayland_surface *surface);
 +void wayland_surface_prepare_direct_dmabuf_shm_commit(struct wayland_surface *surface);
 +void wayland_surface_finish_direct_dmabuf_shm_commit(struct wayland_surface *surface);
- struct child_overlay_snapshot *child_overlays_snapshot(HWND hwnd);
- void wayland_surface_apply_child_overlays(struct wayland_surface *surface,
-                                           struct wayland_shm_buffer *shm_buffer,
+ void wayland_client_surface_attach(struct wayland_client_surface *client, HWND toplevel, const RECT *rect);
 diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
 index 6ab4061511fa4537430e3cf297562cefdd2e07df..f1718f2f7c86a256c820c27cf9f4b250bbc2ddca 100644
 --- a/dlls/winewayland.drv/window.c
@@ -772,10 +770,11 @@ index 6ab4061511fa4537430e3cf297562cefdd2e07df..f1718f2f7c86a256c820c27cf9f4b250
      DWORD style, exstyle;
  
      conf->rect = data->rects.visible;
-@@ -190,6 +211,10 @@ static void wayland_win_data_get_config(struct wayland_win_data *data,
+@@ -188,7 +199,11 @@ static void wayland_win_data_get_config(struct wayland_win_data *data,
      {
          conf->minimized = TRUE;
      }
+ 
 +    else if (wayland_win_data_get_pending_config_state(data, &pending_state))
 +    {
 +        window_state |= pending_state;
