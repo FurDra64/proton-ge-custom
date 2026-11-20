@@ -60,14 +60,14 @@ index 69cc5ee9553..178458a1367 100644
  }
  
  static void zwlr_layer_surface_v1_handle_closed(void *private,
-@@ -645,8 +645,8 @@ void wp_fractional_scale_handle_scale(void* user_data,
+@@ -923,8 +937,8 @@ void wp_fractional_scale_handle_scale(void* user_data,
 
      wayland_win_data_release(data);
  
 -    NtUserExposeWindowSurface(hwnd, 0, NULL);
--    update_window_state(hwnd);
+-    NtUserPostMessage(hwnd, WM_WINE_UPDATEWINDOWSTATE, 0, 0);
 +    request_window_surface_expose(hwnd, FALSE);
-+    update_window_state(hwnd);
++    NtUserPostMessage(hwnd, WM_WINE_UPDATEWINDOWSTATE, 0, 0);
  }
  
  static const struct wp_fractional_scale_v1_listener wp_fractional_scale_listener =
