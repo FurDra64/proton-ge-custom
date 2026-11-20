@@ -21,9 +21,9 @@ diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayla
 index 69cc5ee9553..178458a1367 100644
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
-@@ -35,6 +35,20 @@ static void image_description_failed(void *user_data,
- 
- WINE_DEFAULT_DEBUG_CHANNEL(waylanddrv);
+@@ -232,6 +232,20 @@ static void update_window_state(HWND hwnd)
+     NtUserSetRawWindowPos(hwnd, rect, swp_flags, FALSE);
+ }
  
 +static void request_window_surface_expose(HWND hwnd, BOOL allow_inline)
 +{
@@ -42,10 +42,7 @@ index 69cc5ee9553..178458a1367 100644
  static struct wp_image_description_v1 *scrgb_desc;
  static struct wp_image_description_v1 *bt2100_desc;
  static BOOL color_manager_initialized;
-@@ -232,10 +232,10 @@ static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg_
-     wayland_win_data_release(data);
- 
-     if (should_post) NtUserPostMessage(hwnd, WM_WAYLAND_CONFIGURE, 0, 0);
+@@ -433,7 +433,7 @@ static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg_
  
      /* Flush the window surface in case there is content that we weren't
       * able to flush before due to the lack of the initial configure. */
@@ -54,7 +51,7 @@ index 69cc5ee9553..178458a1367 100644
  }
  
  static const struct xdg_surface_listener xdg_surface_listener =
-@@ -390,7 +390,7 @@ static void zwlr_layer_surface_v1_handle_configure(void *private,
+@@ -590,7 +590,7 @@ static void zwlr_layer_surface_v1_handle_configure(void *private,
      }
  
      wayland_win_data_release(data);
@@ -63,10 +60,8 @@ index 69cc5ee9553..178458a1367 100644
  }
  
  static void zwlr_layer_surface_v1_handle_closed(void *private,
-@@ -444,10 +444,10 @@ void wp_fractional_scale_handle_scale(void* user_data,
-     /* reattach client surfaces as their rects have changed */
-     update_client_surfaces(hwnd);
- 
+@@ -645,8 +645,8 @@ void wp_fractional_scale_handle_scale(void* user_data,
+
      wayland_win_data_release(data);
  
 -    NtUserExposeWindowSurface(hwnd, 0, NULL);
