@@ -285,44 +285,6 @@ index c0b96bc17e45e7c4c3470e435b1cf6ce22009a74..8baf7492738d0a5fc33f022ddaf4a6e4
 +HRESULT WINAPI winedmo_create_video_decoder(IMFTransform **out);
  
  #endif /* __IR50_PRIVATE_H */
-diff --git a/dlls/iyuv_32/Makefile.in b/dlls/iyuv_32/Makefile.in
-index e5a261b973ff51fa883962dedd0741bb4e78a321..25a986cc9d42138595529f697c2a3b3745924dda 100644
---- a/dlls/iyuv_32/Makefile.in
-+++ b/dlls/iyuv_32/Makefile.in
-@@ -1,5 +1,6 @@
- MODULE       = iyuv_32.dll
--IMPORTS      = user32 mfplat ole32 winegstreamer
-+IMPORTS      = user32 mfplat ole32
-+DELAYIMPORTS = winedmo
- 
- SOURCES = \
- 	iyuv.c \
-diff --git a/dlls/iyuv_32/iyuv.c b/dlls/iyuv_32/iyuv.c
-index f990a5bd6a1aea54e55efc2a99400a11451a2833..88b86bf2b4321eb3837e219a48f2e3fef7380933 100644
---- a/dlls/iyuv_32/iyuv.c
-+++ b/dlls/iyuv_32/iyuv.c
-@@ -59,7 +59,7 @@ static LRESULT IYUV_Open(const ICINFO *icinfo)
-     if (icinfo && compare_fourcc(icinfo->fccType, ICTYPE_VIDEO))
-         return 0;
- 
--    if (FAILED(winegstreamer_create_color_converter(&transform)))
-+    if (FAILED(winedmo_create_color_converter(&transform)))
-         transform = NULL;
- 
-     return (LRESULT)transform;
-diff --git a/dlls/iyuv_32/iyuv_private.h b/dlls/iyuv_32/iyuv_private.h
-index 694f89799d593106bbdef972a2ccb7f235897769..9aaae4e30a4486e6088e9ddd063d210f4a5324f7 100644
---- a/dlls/iyuv_32/iyuv_private.h
-+++ b/dlls/iyuv_32/iyuv_private.h
-@@ -25,7 +25,7 @@
- #include "mfapi.h"
- #include "mftransform.h"
- 
--HRESULT WINAPI winegstreamer_create_color_converter(IMFTransform **out);
-+HRESULT WINAPI winedmo_create_color_converter(IMFTransform **out);
- 
- #define IDS_NAME        100
- #define IDS_DESCRIPTION 101
 diff --git a/dlls/msmpeg2vdec/Makefile.in b/dlls/msmpeg2vdec/Makefile.in
 index efbcb6aa238b7d0aa79d62239754e2b7537fd971..a6284aaf5c68d6512d90d6d0373603478c88e5e8 100644
 --- a/dlls/msmpeg2vdec/Makefile.in
@@ -517,20 +479,17 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
          }
          else
              filter->buffers[i].pBuffer = NULL;
-@@ -271,25 +262,34 @@ static HRESULT process_output(struct dmo_wrapper *filter, IMediaObject *dmo)
+@@ -271,26 +262,37 @@ static HRESULT process_output(struct dmo_wrapper *filter, IMediaObject *dmo)
  {
      DMO_OUTPUT_DATA_BUFFER *buffers = filter->buffers;
      HRESULT hr = S_OK;
--    DWORD status = 0, i;
+     DWORD status = 0, i;
 -    BOOL more_data;
-+    DWORD status, i;
 +    BOOL got_output, audio_only;
- 
--    do
++
 +    audio_only = TRUE;
 +    for (i = 0; i < filter->source_count; ++i)
-     {
--        more_data = FALSE;
++    {
 +        if (filter->sources[i].pin.pin.peer
 +                && !IsEqualGUID(&filter->sources[i].pin.pin.mt.majortype, &MEDIATYPE_Audio))
 +        {
@@ -539,16 +498,20 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
 +        }
 +    }
  
+     do
+     {
+         HRESULT process_hr;
+-        more_data = FALSE;
+ 
 -        if (FAILED(hr = get_output_samples(filter, dmo)))
-+    do
-+    {
 +        if (FAILED(hr = get_output_samples(filter)))
              return hr;
  
-         hr = IMediaObject_ProcessOutput(dmo, DMO_PROCESS_OUTPUT_DISCARD_WHEN_NO_BUFFER,
+         process_hr = IMediaObject_ProcessOutput(dmo, DMO_PROCESS_OUTPUT_DISCARD_WHEN_NO_BUFFER,
                  filter->source_count, buffers, &status);
--        TRACE("ProcessOutput() returned %#lx.\n", hr);
-         if (hr != S_OK)
+         TRACE("ProcessOutput() returned %#lx.\n", process_hr);
+-        if (FAILED(process_hr))
++        if (process_hr != S_OK)
          {
              release_output_samples(filter);
              break;
@@ -558,7 +521,7 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
          for (i = 0; i < filter->source_count; ++i)
          {
              IMediaSample *sample = filter->sources[i].buffer.sample;
-@@ -299,8 +299,8 @@ static HRESULT process_output(struct dmo_wrapper *filter, IMediaObject *dmo)
+@@ -299,8 +301,8 @@ static HRESULT process_output(struct dmo_wrapper *filter, IMediaObject *dmo)
  
              IMediaSample_SetActualDataLength(sample, filter->sources[i].buffer.len);
  
@@ -569,7 +532,7 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
  
              if (buffers[i].dwStatus & DMO_OUTPUT_DATA_BUFFERF_TIME)
              {
-@@ -316,8 +316,17 @@ static HRESULT process_output(struct dmo_wrapper *filter, IMediaObject *dmo)
+@@ -316,8 +318,17 @@ static HRESULT process_output(struct dmo_wrapper *filter, IMediaObject *dmo)
              if (buffers[i].dwStatus & DMO_OUTPUT_DATA_BUFFERF_SYNCPOINT)
                  IMediaSample_SetSyncPoint(sample, TRUE);
  
@@ -587,7 +550,7 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
                  if ((hr = IMemInputPin_Receive(filter->sources[i].pin.pMemInputPin, sample)) != S_OK)
                  {
                      WARN("Downstream sink returned %#lx.\n", hr);
-@@ -328,7 +337,10 @@ static HRESULT process_output(struct dmo_wrapper *filter, IMediaObject *dmo)
+@@ -329,7 +340,13 @@ static HRESULT process_output(struct dmo_wrapper *filter, IMediaObject *dmo)
          }
  
          release_output_samples(filter);
@@ -596,10 +559,13 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
 +        if (audio_only && !got_output)
 +            break;
 +    } while (1);
++
++    if (hr == S_FALSE)
++        return S_OK;
  
-     if (hr == S_FALSE)
-         return S_OK;
-@@ -420,6 +432,23 @@ static HRESULT dmo_wrapper_sink_eos(struct strmbase_sink *iface)
+     return hr;
+ }
+@@ -420,6 +437,23 @@ static HRESULT dmo_wrapper_sink_eos(struct strmbase_sink *iface)
      return hr;
  }
  
@@ -623,7 +589,7 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
  static HRESULT dmo_wrapper_end_flush(struct strmbase_sink *iface)
  {
      struct dmo_wrapper *filter = impl_from_strmbase_filter(iface->pin.filter);
-@@ -442,6 +471,30 @@ static HRESULT dmo_wrapper_end_flush(struct strmbase_sink *iface)
+@@ -442,6 +476,30 @@ static HRESULT dmo_wrapper_end_flush(struct strmbase_sink *iface)
      return hr;
  }
  
@@ -654,7 +620,7 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
  static const struct strmbase_sink_ops sink_ops =
  {
      .base.pin_query_interface = dmo_wrapper_sink_query_interface,
-@@ -450,7 +503,9 @@ static const struct strmbase_sink_ops sink_ops =
+@@ -450,7 +508,9 @@ static const struct strmbase_sink_ops sink_ops =
      .sink_connect = dmo_wrapper_sink_connect,
      .sink_disconnect = dmo_wrapper_sink_disconnect,
      .sink_eos = dmo_wrapper_sink_eos,
@@ -664,7 +630,7 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
      .pfnReceive = dmo_wrapper_sink_Receive,
  };
  
-@@ -459,6 +514,11 @@ static inline struct dmo_wrapper_source *impl_source_from_strmbase_pin(struct st
+@@ -459,6 +519,11 @@ static inline struct dmo_wrapper_source *impl_source_from_strmbase_pin(struct st
      return CONTAINING_RECORD(iface, struct dmo_wrapper_source, pin.pin);
  }
  
@@ -676,7 +642,7 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
  static HRESULT dmo_wrapper_source_query_interface(struct strmbase_pin *iface, REFIID iid, void **out)
  {
      struct dmo_wrapper_source *pin = impl_source_from_strmbase_pin(iface);
-@@ -467,6 +527,8 @@ static HRESULT dmo_wrapper_source_query_interface(struct strmbase_pin *iface, RE
+@@ -467,6 +532,8 @@ static HRESULT dmo_wrapper_source_query_interface(struct strmbase_pin *iface, RE
          *out = &pin->passthrough.IMediaPosition_iface;
      else if (IsEqualGUID(iid, &IID_IMediaSeeking))
          *out = &pin->passthrough.IMediaSeeking_iface;
@@ -685,7 +651,7 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
      else
          return E_NOINTERFACE;
  
-@@ -474,16 +536,81 @@ static HRESULT dmo_wrapper_source_query_interface(struct strmbase_pin *iface, RE
+@@ -474,16 +541,81 @@ static HRESULT dmo_wrapper_source_query_interface(struct strmbase_pin *iface, RE
      return S_OK;
  }
  
@@ -769,7 +735,7 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
  
      IMediaObject_Release(dmo);
  
-@@ -518,16 +645,30 @@ static HRESULT WINAPI dmo_wrapper_source_DecideBufferSize(struct strmbase_source
+@@ -518,16 +650,30 @@ static HRESULT WINAPI dmo_wrapper_source_DecideBufferSize(struct strmbase_source
  
      IUnknown_QueryInterface(filter->dmo, &IID_IMediaObject, (void **)&dmo);
  
@@ -802,7 +768,7 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
      }
  
      IMediaObject_Release(dmo);
-@@ -633,6 +774,7 @@ static HRESULT WINAPI dmo_wrapper_filter_Init(IDMOWrapperFilter *iface, REFCLSID
+@@ -633,6 +779,7 @@ static HRESULT WINAPI dmo_wrapper_filter_Init(IDMOWrapperFilter *iface, REFCLSID
      {
          swprintf(id, ARRAY_SIZE(id), L"out%u", i);
          strmbase_source_init(&sources[i].pin, &filter->filter, id, &source_ops);
@@ -810,7 +776,7 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
          sources[i].buffer.IMediaBuffer_iface.lpVtbl = &buffer_vtbl;
  
          strmbase_passthrough_init(&sources[i].passthrough, (IUnknown *)&sources[i].pin.pin.IPin_iface);
-@@ -664,6 +806,44 @@ static const IDMOWrapperFilterVtbl dmo_wrapper_filter_vtbl =
+@@ -664,6 +811,44 @@ static const IDMOWrapperFilterVtbl dmo_wrapper_filter_vtbl =
      dmo_wrapper_filter_Init,
  };
  
@@ -855,7 +821,7 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
  static struct strmbase_pin *dmo_wrapper_get_pin(struct strmbase_filter *iface, unsigned int index)
  {
      struct dmo_wrapper *filter = impl_from_strmbase_filter(iface);
-@@ -705,6 +885,25 @@ static HRESULT dmo_wrapper_query_interface(struct strmbase_filter *iface, REFIID
+@@ -705,6 +890,25 @@ static HRESULT dmo_wrapper_query_interface(struct strmbase_filter *iface, REFIID
          IUnknown_AddRef((IUnknown *)*out);
          return S_OK;
      }
@@ -881,7 +847,7 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
  
      if (filter->dmo && !IsEqualGUID(iid, &IID_IUnknown))
          return IUnknown_QueryInterface(filter->dmo, iid, out);
-@@ -723,9 +922,9 @@ static HRESULT dmo_wrapper_init_stream(struct strmbase_filter *iface)
+@@ -723,9 +927,9 @@ static HRESULT dmo_wrapper_init_stream(struct strmbase_filter *iface)
  
      IUnknown_QueryInterface(filter->dmo, &IID_IMediaObject, (void **)&dmo);
  
@@ -893,7 +859,7 @@ index ab7b2e85ef78331c7699b377c845c4aef20af49b..52a5bf4da9e2ef293d55eb208f6ece97
          IMediaObject_Release(dmo);
          return hr;
      }
-@@ -786,6 +985,7 @@ HRESULT dmo_wrapper_create(IUnknown *outer, IUnknown **out)
+@@ -786,6 +990,7 @@ HRESULT dmo_wrapper_create(IUnknown *outer, IUnknown **out)
      strmbase_filter_init(&object->filter, NULL, &CLSID_DMOWrapperFilter, &filter_ops);
  
      object->IDMOWrapperFilter_iface.lpVtbl = &dmo_wrapper_filter_vtbl;
@@ -1316,29 +1282,6 @@ index d8da7bde5face4e2f9c8faca41b8445f0d80bb91..a19346d7aafaf151d69d92b3c16683c0
      };
      static const REGPINTYPES mpeg_video_codec_outputs[] =
      {
-diff --git a/dlls/quartz/memallocator.c b/dlls/quartz/memallocator.c
-index 38f2ce7a52408eaba06bf89efedd1aca65813d4c..ca786ab00463c7449c170e9c55e1294b0a186c81 100644
---- a/dlls/quartz/memallocator.c
-+++ b/dlls/quartz/memallocator.c
-@@ -162,7 +162,6 @@ static ULONG WINAPI BaseMemAllocator_Release(IMemAllocator * iface)
- static HRESULT WINAPI BaseMemAllocator_SetProperties(IMemAllocator * iface, ALLOCATOR_PROPERTIES *pRequest, ALLOCATOR_PROPERTIES *pActual)
- {
-     BaseMemAllocator *This = impl_from_IMemAllocator(iface);
--    const char *sgi;
-     HRESULT hr;
- 
-     TRACE("(%p)->(%p, %p)\n", This, pRequest, pActual);
-@@ -170,10 +169,6 @@ static HRESULT WINAPI BaseMemAllocator_SetProperties(IMemAllocator * iface, ALLO
-     TRACE("Requested %ld buffers, size %ld, alignment %ld, prefix %ld.\n",
-             pRequest->cBuffers, pRequest->cbBuffer, pRequest->cbAlign, pRequest->cbPrefix);
- 
--    sgi = getenv("SteamGameId");
--    if (sgi && (!strcmp(sgi, "1113000")))
--        pRequest->cBuffers = min(8, pRequest->cBuffers);
--
-     EnterCriticalSection(This->pCritSect);
-     {
-         if (!list_empty(&This->used_list))
 diff --git a/dlls/quartz/tests/filesource.c b/dlls/quartz/tests/filesource.c
 index 268b265ac77141f6afed135afc2bd9738cd2886a..f45530d03a1aa9620bdbc649a566735b58353a36 100644
 --- a/dlls/quartz/tests/filesource.c
@@ -1717,87 +1660,13 @@ index 611a1256b0ec7ae38a39953078530af8d4b5b576..a18feac716b6eb1c5012a0bbdaf64212
      EnterCriticalSection(&filter->renderer.filter.filter_cs);
  
      if (src)
-diff --git a/dlls/vidreszr/vidreszr.c b/dlls/vidreszr/vidreszr.c
-index 92e4d2c37715912266fe60b7c8854755e9e647be..1a951124855c2388f78affe8fcf8506462e0a4f4 100644
---- a/dlls/vidreszr/vidreszr.c
-+++ b/dlls/vidreszr/vidreszr.c
-@@ -43,11 +43,53 @@ DEFINE_GUID(DMOVideoFormat_RGB565,D3DFMT_R5G6B5,0x524f,0x11ce,0x9f,0x53,0x00,0x2
- DEFINE_GUID(DMOVideoFormat_RGB555,D3DFMT_X1R5G5B5,0x524f,0x11ce,0x9f,0x53,0x00,0x20,0xaf,0x0b,0xa7,0x70);
- DEFINE_GUID(DMOVideoFormat_RGB8,D3DFMT_P8,0x524f,0x11ce,0x9f,0x53,0x00,0x20,0xaf,0x0b,0xa7,0x70);
- 
-+static HRESULT WINAPI resizer_factory_CreateInstance(IClassFactory *iface, IUnknown *outer,
-+        REFIID riid, void **out)
-+{
-+    static const GUID CLSID_winedmo_video_processor = {0xd527607f,0x89cb,0x4e94,{0x95,0x71,0xbc,0xfe,0x62,0x17,0x56,0x13}};
-+    return CoCreateInstance(&CLSID_winedmo_video_processor, outer, CLSCTX_INPROC_SERVER, riid, out);
-+}
-+
-+static HRESULT WINAPI class_factory_QueryInterface(IClassFactory *iface, REFIID riid, void **out)
-+{
-+    *out = IsEqualGUID(riid, &IID_IClassFactory) || IsEqualGUID(riid, &IID_IUnknown) ? iface : NULL;
-+    return *out ? S_OK : E_NOINTERFACE;
-+}
-+
-+static ULONG WINAPI class_factory_AddRef(IClassFactory *iface)
-+{
-+    return 2;
-+}
-+
-+static ULONG WINAPI class_factory_Release(IClassFactory *iface)
-+{
-+    return 1;
-+}
-+
-+static HRESULT WINAPI class_factory_LockServer(IClassFactory *iface, BOOL dolock)
-+{
-+    return S_OK;
-+}
-+
-+static const IClassFactoryVtbl resizer_factory_vtbl =
-+{
-+    class_factory_QueryInterface,
-+    class_factory_AddRef,
-+    class_factory_Release,
-+    resizer_factory_CreateInstance,
-+    class_factory_LockServer,
-+};
-+
-+static IClassFactory resizer_factory = {&resizer_factory_vtbl};
-+
- /***********************************************************************
-  *              DllGetClassObject (msvproc.@)
-  */
- HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void **out)
- {
-+    if (IsEqualGUID(clsid, &CLSID_CResizerDMO))
-+        return IClassFactory_QueryInterface(&resizer_factory, riid, out);
-+
-     *out = NULL;
-     FIXME("Unknown clsid %s.\n", debugstr_guid(clsid));
-     return CLASS_E_CLASSNOTAVAILABLE;
-@@ -65,6 +107,7 @@ HRESULT WINAPI DllRegisterServer(void)
-         {MFMediaType_Video, MFVideoFormat_UYVY},
-         {MFMediaType_Video, MFVideoFormat_AYUV},
-         {MFMediaType_Video, MFVideoFormat_NV12},
-+        {MFMediaType_Video, MFVideoFormat_ARGB32},
-         {MFMediaType_Video, DMOVideoFormat_RGB32},
-         {MFMediaType_Video, DMOVideoFormat_RGB565},
-         {MFMediaType_Video, MFVideoFormat_I420},
-@@ -88,6 +131,7 @@ HRESULT WINAPI DllRegisterServer(void)
-         {MFMediaType_Video, MFVideoFormat_UYVY},
-         {MFMediaType_Video, MFVideoFormat_AYUV},
-         {MFMediaType_Video, MFVideoFormat_NV12},
-+        {MFMediaType_Video, MFVideoFormat_ARGB32},
-         {MFMediaType_Video, DMOVideoFormat_RGB32},
-         {MFMediaType_Video, DMOVideoFormat_RGB565},
-         {MFMediaType_Video, MFVideoFormat_I420},
 diff --git a/dlls/wmadmod/Makefile.in b/dlls/wmadmod/Makefile.in
 --- a/dlls/wmadmod/Makefile.in
 +++ b/dlls/wmadmod/Makefile.in
-@@ -1,6 +1,6 @@
+@@ -1,5 +1,6 @@
  MODULE    = wmadmod.dll
- IMPORTS   = combase mfplat msdmo mfuuid dmoguids strmiids wmcodecdspuuid uuid
--DELAYIMPORTS = winegstreamer
+-IMPORTS   = combase mfplat msdmo mfuuid dmoguids strmiids wmcodecdspuuid uuid winegstreamer
++IMPORTS   = combase mfplat msdmo mfuuid dmoguids strmiids wmcodecdspuuid uuid
 +DELAYIMPORTS = winedmo
  
  SOURCES = \
@@ -1805,66 +1674,39 @@ diff --git a/dlls/wmadmod/Makefile.in b/dlls/wmadmod/Makefile.in
 diff --git a/dlls/wmadmod/wmadmod.c b/dlls/wmadmod/wmadmod.c
 --- a/dlls/wmadmod/wmadmod.c
 +++ b/dlls/wmadmod/wmadmod.c
-@@ -34,7 +34,7 @@
+@@ -34,5 +34,5 @@
  
  WINE_DEFAULT_DEBUG_CHANNEL(dmo);
  
--extern HRESULT WINAPI winegstreamer_create_wma_decoder(IUnknown *outer, IUnknown **out);
-+extern HRESULT WINAPI winedmo_create_wma_decoder(IUnknown *outer, IUnknown **out);
+-extern HRESULT WINAPI winegstreamer_create_wma_decoder(IUnknown *outer, REFIID riid, void **out);
++extern HRESULT WINAPI winedmo_create_wma_decoder(IUnknown *outer, REFIID riid, void **out);
  
+@@ -39,7 +39,7 @@
  static HRESULT WINAPI wma_decoder_factory_CreateInstance(IClassFactory *iface, IUnknown *outer,
          REFIID riid, void **out)
-@@ -46,7 +46,7 @@ static HRESULT WINAPI wma_decoder_factory_CreateInstance(IClassFactory *iface,
-         return E_NOINTERFACE;
+ {
+-    return winegstreamer_create_wma_decoder(outer, riid, out);
++    return winedmo_create_wma_decoder(outer, riid, out);
+ }
  
-     *out = NULL;
--    if (FAILED(hr = winegstreamer_create_wma_decoder(outer, &unk)))
-+    if (FAILED(hr = winedmo_create_wma_decoder(outer, &unk)))
-         return hr;
- 
-     hr = IUnknown_QueryInterface(unk, riid, out);
+ static HRESULT WINAPI class_factory_QueryInterface(IClassFactory *iface, REFIID riid, void **out)
 diff --git a/dlls/wmvcore/Makefile.in b/dlls/wmvcore/Makefile.in
 index 49ffdca73c6d4d76a0659bbda73bf7e9f1b32484..37a41e89d912966959bbca064b99d013d726ff6d 100644
 --- a/dlls/wmvcore/Makefile.in
 +++ b/dlls/wmvcore/Makefile.in
-@@ -1,7 +1,7 @@
+@@ -1,6 +1,6 @@
  MODULE    = wmvcore.dll
  IMPORTLIB = wmvcore
  IMPORTS   = kernel32 combase
 -DELAYIMPORTS = winegstreamer
 +DELAYIMPORTS = winedmo
  
- EXTRADLLFLAGS = -Wb,--prefer-native
- 
+ VER_FILEDESCRIPTION_STR = "Wine Media Playback dll"
 diff --git a/dlls/wmvcore/async_reader.c b/dlls/wmvcore/async_reader.c
 index 2f8c10da8f02bcf55fd1f148633f5fa596bc22ef..cec97f42eab8cdba657ea45949f670989724fc42 100644
 --- a/dlls/wmvcore/async_reader.c
 +++ b/dlls/wmvcore/async_reader.c
-@@ -480,11 +480,15 @@ static HRESULT stream_open(struct stream *stream, struct async_reader *reader, W
- 
-     stream->number = number;
-     stream->reader = reader;
-+    stream->running = true;
-     list_init(&stream->read_samples);
-     list_init(&stream->deliver_samples);
- 
-     if (!(stream->read_thread = CreateThread(NULL, 0, stream_read_thread, stream, 0, NULL)))
-+    {
-+        stream->running = false;
-         return E_OUTOFMEMORY;
-+    }
- 
-     if (!(stream->deliver_thread = CreateThread(NULL, 0, stream_deliver_thread, stream, 0, NULL)))
-     {
-@@ -493,7 +497,6 @@ static HRESULT stream_open(struct stream *stream, struct async_reader *reader, W
-         EnterCriticalSection(&reader->callback_cs);
-         return E_OUTOFMEMORY;
-     }
--    stream->running = true;
- 
-     return S_OK;
- }
-@@ -2259,7 +2262,7 @@ static HRESULT WINAPI async_reader_create(IWMReader **reader)
+@@ -2259,7 +2259,7 @@ static HRESULT WINAPI async_reader_create(IWMReader **reader)
      object->IWMReaderTypeNegotiation_iface.lpVtbl = &WMReaderTypeNegotiationVtbl;
      object->refcount = 1;
  

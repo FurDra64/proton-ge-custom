@@ -63,7 +63,12 @@ apply_patch() {
 
 # Directories known to legitimately contain no *.patch files. An empty,
 # undeclared directory is an unexpected skip and counts as FAILED.
-EMPTY_OK_DIRS=()
+# t_5ff0e2ac: the two staging fixups below were verified in-tree
+# (reverse-apply exit 0) and dropped; their dirs are now empty by design.
+EMPTY_OK_DIRS=(
+    "../patches/wine-hotfixes/wine-staging/comctl32_animate_avi/"
+    "../patches/wine-hotfixes/wine-staging/windowscodecs-TIFF_Support/"
+)
 
 apply_all_in_dir() {
     local dir="$1"
@@ -596,7 +601,10 @@ fi
     # ACE-CORE fails DriverEntry unless lsass.exe is running. Backported in
     # CachyOS/wine-cachyos (3b0c6a64ba, b1fbd12dd0); drop with the Wine 12 rebase.
     echo "WINE: -GAME FIXES- add and start an lsass.exe SamSs service stub for ACE anti-cheat"
-    apply_patch "../patches/game-patches/ace-lsass-samss-service-stub.patch"
+    # t_5ff0e2ac: dropped, absorbed upstream — wine ships its own programs/lsass
+    # (Piotr Caban 2026: main.c ServiceMain/wmain + SamSs wiring, ENABLE_ARCHS,
+    # wine.inf SamSsService); reverse-apply of the remainder is a clean no-op set.
+    # apply_patch "../patches/game-patches/ace-lsass-samss-service-stub.patch"
 
 ### END GAME PATCH SECTION ###
 
@@ -607,8 +615,9 @@ fi
 
     # Warcraft III 3.0: modern CERT_CHAIN_ENGINE_CONFIG used by ClientSdk login.
     # Upstream Wine fixes for #59531 and the legacy-layout regression #59600.
-    apply_patch "../patches/wine-hotfixes/pending/crypt32-wc3-modern-chain-engine-config.patch"
-    apply_patch "../patches/wine-hotfixes/pending/crypt32-wc3-accept-legacy-chain-engine-config.patch"
+    # t_5ff0e2ac: dropped, verified in-tree via reverse-apply exit 0 on the gate shadow.
+    # apply_patch "../patches/wine-hotfixes/pending/crypt32-wc3-modern-chain-engine-config.patch"
+    # apply_patch "../patches/wine-hotfixes/pending/crypt32-wc3-accept-legacy-chain-engine-config.patch"
 
 
 
@@ -619,7 +628,8 @@ fi
 
 
     echo "WINE: -HOTFIX- Backport schannel SECBUFFER_MISSING size fix for incomplete TLS records (upstream 9aee0e71, 35b1e7eb)"
-    apply_patch "../patches/wine-hotfixes/pending/secur32-schannel-fix-incomplete-message-missing-size.patch"
+    # t_5ff0e2ac: dropped, verified in-tree via reverse-apply exit 0 on the gate shadow.
+    # apply_patch "../patches/wine-hotfixes/pending/secur32-schannel-fix-incomplete-message-missing-size.patch"
 
 
 
@@ -651,7 +661,11 @@ fi
 
     # https://gitlab.winehq.org/wine/wine/-/commit/a31ec8da9572672e04ae46792a398da942649875
     echo "WINE: -HOTFIX- Prefer native non-Microsoft DLLs using version resources"
-    apply_patch "../patches/wine-hotfixes/pending/ntdll-prefer-native-version-resource-heuristics.patch"
+    # t_5ff0e2ac: DROP prefer-native-version-resource-heuristics (SUPERSEDED, not in-tree verbatim):
+    # upstream wine 34c16565 carries the evolved equivalent via pe_mapping_info
+    # (loadorder.c get_version_entry/vendors[] heuristic + get_load_order(nt_name,is_system_dir,pe_mapping));
+    # this backport targets the older pre-pe_mapping_info API and no longer applies.
+    # apply_patch "../patches/wine-hotfixes/pending/ntdll-prefer-native-version-resource-heuristics.patch"
 
 
 ### END WINE HOTFIX/BACKPORT SECTION ###
@@ -661,7 +675,8 @@ fi
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/531
     # https://gitlab.winehq.org/wine/wine/-/merge_requests/10889 (Aaron Yourk)
     echo "WINE: -BACKPORT- Recreate stale OLE clipboard windows after STA thread exit"
-    apply_patch "../patches/wine-hotfixes/pending/ole32-clipboard-stale-handle-2-fix.patch"
+    # t_5ff0e2ac: dropped, verified in-tree via reverse-apply exit 0 on the gate shadow.
+    # apply_patch "../patches/wine-hotfixes/pending/ole32-clipboard-stale-handle-2-fix.patch"
 
     # https://github.com/Frogging-Family/wine-tkg-git/commit/ca0daac62037be72ae5dd7bf87c705c989eba2cb
 
