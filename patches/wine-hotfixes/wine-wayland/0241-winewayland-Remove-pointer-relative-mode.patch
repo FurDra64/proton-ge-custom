@@ -5,10 +5,13 @@ Date: Tue, 28 Jul 2026 00:31:35 -0400
 Subject: [PATCH 241/285] winewayland: Remove pointer relative mode.
 
 Windows always tracks an absolute pointer position.
+
+Keep the Wine pin's relative_mode member: the relative-motion listener
+(and its follow-up in 0273) still reads it. The old header hunk matched
+only the extra member injected by the obsolete 0091 fallback.
 ---
  dlls/winewayland.drv/wayland_pointer.c | 29 +++++---------------------
- dlls/winewayland.drv/waylanddrv.h      |  1 -
- 2 files changed, 5 insertions(+), 25 deletions(-)
+ 1 file changed, 5 insertions(+), 24 deletions(-)
 
 diff --git a/dlls/winewayland.drv/wayland_pointer.c b/dlls/winewayland.drv/wayland_pointer.c
 index 36dc5e45042..49e22afcfe4 100644
@@ -77,17 +80,6 @@ index 36dc5e45042..49e22afcfe4 100644
          }
          else
          {
-diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
-index 0b4f2be6357..9f7501723bd 100644
---- a/dlls/winewayland.drv/waylanddrv.h
-+++ b/dlls/winewayland.drv/waylanddrv.h
-@@ -166,6 +166,5 @@ struct wayland_pointer
-     BOOL pending_warp;
-     POINT warp;
--    BOOL relative_mode;
-     uint32_t enter_serial;
-     uint32_t button_serial;
-     struct wayland_cursor cursor;
 -- 
 2.55.0
 

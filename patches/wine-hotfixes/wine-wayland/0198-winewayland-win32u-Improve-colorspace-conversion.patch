@@ -247,7 +247,7 @@ index 05e8f26a7c9..c1fde1db6e0 100644
  };
  
  /**********************************************************************
-@@ -97,6 +93,49 @@ static const struct wl_seat_listener seat_listener =
+@@ -97,6 +93,51 @@ static const struct wl_seat_listener seat_listener =
      wl_seat_handle_name
  };
  
@@ -259,6 +259,7 @@ index 05e8f26a7c9..c1fde1db6e0 100644
 +static void wayland_color_manager_handle_supported_feature(void *data,
 +    struct wp_color_manager_v1 *wp_color_manager_v1, uint32_t feature)
 +{
++    color_manager_listener.supported_feature(data, wp_color_manager_v1, feature);
 +    pthread_mutex_lock(&process_wayland.output_mutex);
 +
 +    TRACE("feature %u\n", feature);
@@ -284,6 +285,7 @@ index 05e8f26a7c9..c1fde1db6e0 100644
 +static void wayland_color_manager_handle_done(void *data,
 +                        struct wp_color_manager_v1 *wp_color_manager_v1)
 +{
++    color_manager_listener.done(data, wp_color_manager_v1);
 +}
 +
 +static const struct wp_color_manager_v1_listener wp_color_manager_listener = {
@@ -346,7 +348,7 @@ index 8a5e6b9a83f..070a96325ad 100644
  
      output->pending_flags = 0;
  
-@@ -801,65 +793,3 @@ void wayland_output_use_xdg_extension(struct wayland_output *output)
+@@ -801,67 +793,3 @@ void wayland_output_use_xdg_extension(struct wayland_output *output)
      zxdg_output_v1_add_listener(output->zxdg_output_v1, &zxdg_output_v1_listener,
                                  output);
  }
@@ -359,6 +361,7 @@ index 8a5e6b9a83f..070a96325ad 100644
 -static void wayland_color_manager_handle_supported_feature(void *data,
 -    struct wp_color_manager_v1 *wp_color_manager_v1, uint32_t feature)
 -{
+-    color_manager_listener.supported_feature(data, wp_color_manager_v1, feature);
 -    pthread_mutex_lock(&process_wayland.output_mutex);
 -
 -    TRACE("feature %u\n", feature);
@@ -394,6 +397,7 @@ index 8a5e6b9a83f..070a96325ad 100644
 -static void wayland_color_manager_handle_done(void *data,
 -                        struct wp_color_manager_v1 *wp_color_manager_v1)
 -{
+-    color_manager_listener.done(data, wp_color_manager_v1);
 -}
 -
 -static const struct wp_color_manager_v1_listener wp_color_manager_listener = {

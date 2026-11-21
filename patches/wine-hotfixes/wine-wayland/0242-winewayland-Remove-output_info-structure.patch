@@ -601,10 +601,9 @@ index 0746409..6f2cb1a 100644
      }
  
 diff --git a/dlls/winewayland.drv/wayland.c b/dlls/winewayland.drv/wayland.c
-index a17d46c..ae2cbee 100644
 --- a/dlls/winewayland.drv/wayland.c
 +++ b/dlls/winewayland.drv/wayland.c
-@@ -41,7 +41,6 @@ struct wayland process_wayland =
+@@ -41,7 +41,6 @@
                              &process_wayland.touch.touch_points },
      .text_input.mutex = PTHREAD_MUTEX_INITIALIZER,
      .data_device.mutex = PTHREAD_MUTEX_INITIALIZER,
@@ -612,7 +611,7 @@ index a17d46c..ae2cbee 100644
      .output_mutex = PTHREAD_MUTEX_INITIALIZER,
  };
  
-@@ -164,15 +163,15 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
+@@ -166,15 +165,15 @@
      }
      else if (strcmp(interface, "zxdg_output_manager_v1") == 0)
      {
@@ -631,7 +630,54 @@ index a17d46c..ae2cbee 100644
      }
      else if (strcmp(interface, "wl_compositor") == 0)
      {
-@@ -327,7 +326,7 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
+@@ -306,19 +305,9 @@
+         process_wayland.zxdg_decoration_manager_v1 =
+             wl_registry_bind(registry, id, &zxdg_decoration_manager_v1_interface, 2);
+     }
+-#ifdef WL_FIXES_ACK_GLOBAL_REMOVE
+-    else if (strcmp(interface, "wl_fixes") == 0)
+-    {
+-        if (version < 2)
+-            return;
+-
+-        process_wayland.wl_fixes =
+-            wl_registry_bind(registry, id, &wl_fixes_interface, 2);
+-    }
+-#endif
+     else if (strcmp(interface, "wp_color_manager_v1") == 0)
+     {
+-        struct wayland_output *output;
++        struct wayland_output **output;
+ 
+         process_wayland.wp_color_manager_v1 =
+             wl_registry_bind(registry, id, &wp_color_manager_v1_interface,
+@@ -326,8 +315,8 @@
+         wp_color_manager_v1_add_listener(process_wayland.wp_color_manager_v1,
+                                          &wp_color_manager_listener, NULL);
+         /* Add image descriptions to existing outputs. */
+-        wl_list_for_each(output, &process_wayland.output_list, link)
+-            wayland_output_use_image_description(output);
++        wl_array_for_each(output, &process_wayland.output_array)
++            wayland_output_use_image_description(*output);
+     }
+     else if (strcmp(interface, "xdg_activation_v1") == 0)
+     {
+@@ -339,12 +328,22 @@
+         process_wayland.zwp_keyboard_shortcuts_inhibit_manager_v1 =
+             wl_registry_bind(registry, id, &zwp_keyboard_shortcuts_inhibit_manager_v1_interface, 1);
+     }
++#ifdef WL_FIXES_ACK_GLOBAL_REMOVE
++    else if (strcmp(interface, "wl_fixes") == 0)
++    {
++        if (version < 2)
++            return;
++
++        process_wayland.wl_fixes =
++            wl_registry_bind(registry, id, &wl_fixes_interface, 2);
++    }
++#endif
+ }
+ 
  static void registry_handle_global_remove(void *data, struct wl_registry *registry,
                                            uint32_t id)
  {
@@ -640,15 +686,16 @@ index a17d46c..ae2cbee 100644
      struct wayland_seat *seat;
  
      TRACE("id=%u\n", id);
-@@ -337,15 +336,17 @@ static void registry_handle_global_remove(void *data, struct wl_registry *regist
+@@ -354,15 +353,17 @@
          wl_fixes_ack_global_remove(process_wayland.wl_fixes, registry, id);
  #endif
  
 -    wl_list_for_each_safe(output, tmp, &process_wayland.output_list, link)
+-    {
+-        if (output->global_id == id)
 +    pthread_mutex_lock(&process_wayland.output_mutex);
 +    wl_array_for_each(output, &process_wayland.output_array)
-     {
--        if (output->global_id == id)
++    {
 +        if ((*output)->global_id == id)
          {
 -            TRACE("removing output->name=%s\n", output->current.name);
@@ -661,27 +708,7 @@ index a17d46c..ae2cbee 100644
  
      seat = &process_wayland.seat;
      if (seat->wl_seat && seat->global_id == id)
-@@ -371,7 +372,7 @@ static void registry_handle_global_remove(void *data, struct wl_registry *regist
-     }
-     else if (strcmp(interface, "wp_color_manager_v1") == 0)
-     {
--        struct wayland_output *output;
-+        struct wayland_output **output;
- 
-         process_wayland.wp_color_manager_v1 =
-             wl_registry_bind(registry, id, &wp_color_manager_v1_interface,
-@@ -379,8 +380,8 @@ static void registry_handle_global_remove(void *data, struct wl_registry *regist
-         wp_color_manager_v1_add_listener(process_wayland.wp_color_manager_v1,
-                                          &wp_color_manager_listener, NULL);
-         /* Add image descriptions to existing outputs. */
--        wl_list_for_each(output, &process_wayland.output_list, link)
--            wayland_output_use_image_description(output);
-+        wl_array_for_each(output, &process_wayland.output_array)
-+            wayland_output_use_image_description(*output);
-     }
-     else if (strcmp(interface, "xdg_activation_v1") == 0)
-     {
-@@ -446,6 +447,7 @@ BOOL wayland_process_init(void)
+@@ -428,6 +429,7 @@
  
      /* initialize win data mutex */
      wayland_window_init();
@@ -1076,7 +1103,7 @@ index 4eed486..c4474b4 100644
  struct wl_output *wayland_layer_output_for_rect(const RECT *rect, RECT *output_rect,
                                                  double *output_scale);
  
-@@ -487,14 +479,14 @@ BOOL wayland_surface_config_is_compatible(struct wayland_surface_config *conf, R
+@@ -485,17 +477,17 @@ BOOL wayland_surface_config_is_compatible(struct wayland_surface_config *conf, R
  void wayland_surface_update_toplevel_parent(struct wayland_surface *surface);
  RECT map_rect_to_surface(struct wayland_surface *surface, RECT rect);
  POINT map_point_to_surface(struct wayland_surface *surface, POINT point);
@@ -1088,10 +1115,13 @@ index 4eed486..c4474b4 100644
  void wayland_client_surface_attach_image_description(struct client_surface *client,
                                                       struct wp_image_description_v1 *image_desc);
  void wayland_surface_set_title(struct wayland_surface *surface, LPCWSTR title);
--void wayland_client_surface_attach_image_description(struct wayland_client_surface *surface,
--                                                     struct wp_image_description_v1 *image_desc);
  void wayland_surface_assign_icon(struct wayland_surface *surface);
  void wayland_surface_set_icon_buffer(struct wayland_surface *surface, UINT type, const ICONINFO *ii);
  void wayland_surface_set_opacity(struct wayland_surface *surface, BYTE alpha, UINT flags);
+-void wayland_client_surface_attach_image_description(struct wayland_client_surface *surface,
+-                                                     struct wp_image_description_v1 *image_desc);
+ void wayland_surface_activate(struct wayland_surface *surface, BOOL serial);
+ void wayland_surface_shortcut_control(struct wayland_surface *surface, BOOL inhibit);
+ 
 -- 
 2.55.0
