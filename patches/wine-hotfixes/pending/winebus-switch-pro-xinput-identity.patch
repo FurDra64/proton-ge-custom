@@ -72,8 +72,8 @@ diff --git a/dlls/winebus.sys/bus_sdl.c b/dlls/winebus.sys/bus_sdl.c
          axis_count = 6;
      }
      else
-@@ -1219,6 +1245,7 @@
- 
+@@ -1223,5 +1249,6 @@
+     pSDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
      /* CW-Bug-Id: #23185: Disable SDL 2.30 new behavior, we need the steam virtual
       * controller name to figure which slot number it represents. */
 +    steam_input_enabled = is_steam_input_enabled();
@@ -107,22 +107,22 @@ diff --git a/dlls/winebus.sys/main.c b/dlls/winebus.sys/main.c
      if (ext->desc.spoof_dualshock4 || ext->desc.spoof_dualshock4_v1)
          return L"Wireless Controller";
      return ext->desc.product;
-@@ -614,7 +622,7 @@
+@@ -627,7 +635,7 @@
      if ((dst = ExAllocatePool(PagedPool, len * sizeof(WCHAR))))
      {
          pos += swprintf(dst + pos, len - pos, winebus_format, bus_str,
 -                ext->desc.vid, get_windows_product_id(ext));
 +                get_windows_vendor_id(ext), get_windows_product_id(ext));
-         if (input_len) pos += swprintf(dst + pos, len - pos, input_format, ext->desc.input);
+         if (interface_len) pos += swprintf(dst + pos, len - pos, interface_format, ext->desc.interface);
      }
  
-@@ -636,7 +644,7 @@
+@@ -649,7 +657,7 @@
      if ((dst = ExAllocatePool(PagedPool, (len + 1) * sizeof(WCHAR))))
      {
          pos += swprintf(dst + pos, len - pos, winebus_format,
 -                ext->desc.vid, get_windows_product_id(ext));
 +                get_windows_vendor_id(ext), get_windows_product_id(ext));
-         if (input_len) pos += swprintf(dst + pos, len - pos, input_format, ext->desc.input);
+         if (interface_len) pos += swprintf(dst + pos, len - pos, interface_format, ext->desc.interface);
          pos += 1;
          dst[pos] = 0;
 @@ -2778,7 +2786,7 @@
@@ -137,11 +137,10 @@ diff --git a/dlls/winebus.sys/main.c b/dlls/winebus.sys/main.c
 diff --git a/dlls/winebus.sys/unixlib.h b/dlls/winebus.sys/unixlib.h
 --- a/dlls/winebus.sys/unixlib.h
 +++ b/dlls/winebus.sys/unixlib.h
-@@ -43,6 +43,7 @@
+@@ -43,5 +43,6 @@
      BOOL is_hidraw;
      BOOL spoof_dualshock4;
      BOOL spoof_dualshock4_v1;
 +    BOOL use_xbox_identity;
  
-     WCHAR manufacturer[MAX_PATH];
-     WCHAR product[MAX_PATH];
+     WCHAR parent[MAX_PATH]; /* backend specific string uniquely identifying the device parent */

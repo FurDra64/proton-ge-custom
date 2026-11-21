@@ -468,17 +468,11 @@ fi
 ### (2-5) WINE HOTFIX/BACKPORT SECTION ###
 
 
-    echo "WINE: -HOTFIX- Initialize the SQM client machine identifier"
-    apply_patch "../patches/wine-hotfixes/pending/wineboot-create-sqm-machine-id.patch"
-
-
 
 
     # Warcraft III 3.0: modern CERT_CHAIN_ENGINE_CONFIG used by ClientSdk login.
     # Upstream Wine fixes for #59531 and the legacy-layout regression #59600.
     apply_patch "../patches/wine-hotfixes/pending/crypt32-wc3-modern-chain-engine-config.patch"
-    apply_patch "../patches/wine-hotfixes/pending/crypt32-wc3-trace-chain-engine-config.patch"
-    apply_patch "../patches/wine-hotfixes/pending/crypt32-wc3-check-exclusive-flags-size.patch"
     apply_patch "../patches/wine-hotfixes/pending/crypt32-wc3-accept-legacy-chain-engine-config.patch"
 
 
@@ -509,8 +503,7 @@ fi
 
 
     # https://gitlab.winehq.org/wine/wine/-/commit/f4c5b04148db5fc4e5265beec461d3b7d9f4a789
-    echo "WINE: -HOTFIX- Reserve top-down space for large-address-aware WoW64 applications"
-    apply_patch "../patches/wine-hotfixes/pending/ntdll-reserve-top-down-space-for-large-address-aware-wow64.patch"
+    # (superseded by upstream 829b468854d: 0xfffe0000 AREA_BLOCKED)
 
     # The NVIDIA driver maps 4G + 2M at the first free address from 0x200000000 for the Vulkan extensions DLSS needs;
     # bottom-up allocation (ntdll-ForceBottomUpAlloc) can fill that range (DLSS in Star Citizen, #460).
@@ -533,7 +526,6 @@ fi
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/531
     # https://gitlab.winehq.org/wine/wine/-/merge_requests/10889 (Aaron Yourk)
     echo "WINE: -BACKPORT- Recreate stale OLE clipboard windows after STA thread exit"
-    apply_patch "../patches/wine-hotfixes/pending/ole32-clipboard-stale-handle-1-tests.patch"
     apply_patch "../patches/wine-hotfixes/pending/ole32-clipboard-stale-handle-2-fix.patch"
 
     # https://github.com/Frogging-Family/wine-tkg-git/commit/ca0daac62037be72ae5dd7bf87c705c989eba2cb
@@ -541,9 +533,6 @@ fi
     # llvm-libc: kernel thread ID and no _r_debug warning, neither changes glibc builds
 
     # https://bugs.winehq.org/show_bug.cgi?id=58476
-
-    echo "WINE: -PENDING- ncrypt: NCryptDecrypt implementation (PSN Login for Ghost of Tsushima)"
-    apply_patch "../patches/wine-hotfixes/pending/NCryptDecrypt_implementation.patch"
 
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/433
 
