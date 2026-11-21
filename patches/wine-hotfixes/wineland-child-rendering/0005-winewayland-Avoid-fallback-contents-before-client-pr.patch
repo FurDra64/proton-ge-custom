@@ -31,7 +31,7 @@ index 3cb43a0d524..ad39bcfd229 100644
 +    set_client_surface(client->hwnd, surface);
  }
  
- static void dummy_buffer_release(void *data, struct wl_buffer *buffer)
+ static BOOL wayland_client_surface_is_hwnd_dmabuf_producer(struct wayland_client_surface *surface)
 @@ -3008,13 +2998,15 @@ void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
          if ((old_client = data->client_surface))
              wayland_client_surface_attach(old_client, NULL, NULL);
