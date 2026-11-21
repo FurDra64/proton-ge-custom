@@ -24,29 +24,33 @@ It does not change server-decoration-initiated sizing, Wayland sizing,
 mouse coordinate mapping, or D3D9 reset behavior.
 
 ---
+dlls/winex11.drv/mouse.c | 6 +++++-
+1 file changed, 5 insertions(+), 1 deletion(-)
+
 diff --git a/dlls/winex11.drv/mouse.c b/dlls/winex11.drv/mouse.c
 --- a/dlls/winex11.drv/mouse.c
 +++ b/dlls/winex11.drv/mouse.c
-@@ -1552,6 +1552,7 @@ void move_resize_window( HWND hwnd, int dir, POINT pos )
+@@ -1573,7 +1573,8 @@ void move_resize_window( HWND hwnd, int dir, POINT pos )
          MSG msg;
-         INPUT input;
          int x, y, rootX, rootY;
+         UINT flags = button_up_flags[button];
 +        DWORD start = NtGetTickCount(), elapsed;
- 
+
          if (!XQueryPointer( display, root_window, &root, &child, &rootX, &rootY, &x, &y, &xstate )) break;
- 
-@@ -1576,10 +1577,13 @@ void move_resize_window( HWND hwnd, int dir, POINT pos )
+
+         if (!(xstate & (Button1Mask << button))) /* fake a button release event */
+@@ -1583,10 +1584,13 @@ void move_resize_window( HWND hwnd, int dir, POINT pos )
                  NtUserTranslateMessage( &msg, 0 );
                  NtUserDispatchMessage( &msg );
              }
-+            /* A rendering timer can keep the queue busy indefinitely. */
-+            if (NtGetTickCount() - start >= 100) break;
          }
- 
-         if (!(xstate & (Button1Mask << (button - 1)))) break;
++        /* A rendering timer can keep the queue busy indefinitely. */
++        if (NtGetTickCount() - start >= 100) break;
+
+         if (!(xstate & (Button1Mask << button))) break;
 -        NtUserMsgWaitForMultipleObjectsEx( 0, NULL, 100, QS_ALLINPUT, 0 );
 +        if ((elapsed = NtGetTickCount() - start) < 100)
 +            NtUserMsgWaitForMultipleObjectsEx( 0, NULL, 100 - elapsed, QS_ALLINPUT, 0 );
      }
- 
+
      TRACE( "hwnd %p/%lx done\n", hwnd, win );

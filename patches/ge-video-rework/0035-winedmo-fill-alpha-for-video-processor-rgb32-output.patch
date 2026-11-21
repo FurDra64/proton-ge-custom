@@ -12,47 +12,50 @@ transparent.
 Normalize RGB32 and ARGB32 output produced by the video processor before it is
 copied or uploaded to the destination sample.
 ---
- dlls/winedmo/video_processor.c | 16 ++++++++++++++++
- 1 file changed, 16 insertions(+)
+ dlls/msvproc/video_processor.c | 25 +++++++++++++++++++++++--
+ 1 file changed, 23 insertions(+), 2 deletions(-)
 
-diff --git a/dlls/winedmo/video_processor.c b/dlls/winedmo/video_processor.c
---- a/dlls/winedmo/video_processor.c
-+++ b/dlls/winedmo/video_processor.c
-@@ -235,6 +235,20 @@ static void flip_rgb32_output(struct video_processor *impl, BYTE *data, UINT32 d
-     free(tmp);
- }
+diff --git a/dlls/msvproc/video_processor.c b/dlls/msvproc/video_processor.c
+--- a/dlls/msvproc/video_processor.c
++++ b/dlls/msvproc/video_processor.c
+@@ -338,6 +338,23 @@ struct video_processor
+     IMFVideoSampleAllocatorEx *allocator;
+ };
  
-+static void fill_rgb32_output_alpha(struct video_processor *impl, BYTE *data, UINT32 data_size)
++static void fill_rgb32_output_alpha(AVFrame *frame)
 +{
-+    GUID subtype;
-+    UINT32 i;
++    UINT x, y;
 +
-+    if (FAILED(IMFMediaType_GetGUID(impl->output_type, &MF_MT_SUBTYPE, &subtype))
-+            || (!IsEqualGUID(&subtype, &MFVideoFormat_RGB32)
-+                    && !IsEqualGUID(&subtype, &MFVideoFormat_ARGB32)))
++    /* swscale leaves the high byte of packed RGB32 output unset. Texture renderers
++     * commonly interpret it as alpha, so normalize it to opaque. */
++    if (frame->format != AV_PIX_FMT_BGR0 && frame->format != AV_PIX_FMT_BGRA)
 +        return;
 +
-+    for (i = 3; i < data_size; i += 4)
-+        data[i] = 0xff;
++    for (y = 0; y < (UINT)frame->height; ++y)
++    {
++        uint8_t *row = frame->data[0] + (size_t)y * frame->linesize[0];
++        for (x = 0; x < (UINT)frame->width; ++x)
++            row[4 * x + 3] = 0xff;
++    }
 +}
 +
- static HRESULT try_create_winedmo_transform(struct video_processor *impl)
+ static HRESULT video_processor_process_frame(struct video_processor *impl, AVFrame *input_frame,
+         DMO_OUTPUT_DATA_BUFFER *output)
  {
-     BOOL bottom_up = !impl->device_manager; /* when not D3D-enabled, the transform outputs bottom up RGB buffers */
-@@ -986,5 +1000,6 @@ static HRESULT video_processor_process_output_cpu(struct video_processor *proces
-                 if (out_flags & WINEDMO_SAMPLE_FLAG_FORMAT_CHANGED)
-                     return MF_E_TRANSFORM_STREAM_CHANGE;
-+                fill_rgb32_output_alpha(processor, data, out_size);
-                 flip_rgb32_output(processor, data, out_size);
-                 if (SUCCEEDED(hr = video_processor_upload_d3d11_output(processor, output_sample, data, out_size)))
-                 {
-@@ -1024,6 +1039,7 @@ static HRESULT video_processor_process_output_cpu(struct video_processor *proces
-             return MF_E_TRANSFORM_STREAM_CHANGE;
-         }
-         IMFMediaBuffer_SetCurrentLength(buffer, out_size);
-+        fill_rgb32_output_alpha(processor, data, out_size);
-         flip_rgb32_output(processor, data, out_size);
-         if (out_pts != INT64_MIN)
-         {
+@@ -357,8 +374,12 @@ static HRESULT video_processor_process_frame(struct video_processor *impl, AVFra
+ 
+     if ((ret = sws_scale_frame(impl->context, &output_frame, input_frame)) < 0)
+         ERR("error ret %d (%s)\n", -ret, av_err2str(ret));
+-    else if ((ret = size) < 0)
+-        ret = video_frame_copy_to_buffer(&output_frame, impl->output_format, buffer, pitch);
++    else
++    {
++        fill_rgb32_output_alpha(&output_frame);
++        if ((ret = size) < 0)
++            ret = video_frame_copy_to_buffer(&output_frame, impl->output_format, buffer, pitch);
++    }
+ 
+     av_buffer_unref(&buffer);
+ 
 -- 
 2.52.0

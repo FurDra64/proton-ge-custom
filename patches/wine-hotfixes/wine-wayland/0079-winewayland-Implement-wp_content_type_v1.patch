@@ -17,14 +17,12 @@ diff --git a/dlls/winewayland.drv/Makefile.in b/dlls/winewayland.drv/Makefile.in
 index b1267d3f28b..c8f27813406 100644
 --- a/dlls/winewayland.drv/Makefile.in
 +++ b/dlls/winewayland.drv/Makefile.in
-@@ -6,6 +6,7 @@ IMPORTS = user32 win32u
- 
- SOURCES = \
+@@ -10,4 +10,5 @@ SOURCES = \
  	alpha-modifier-v1.xml \
+ 	color-management-v1.xml \
 +	content-type-v1.xml \
  	cursor-shape-v1.xml \
  	display.c \
- 	dllmain.c \
 diff --git a/dlls/winewayland.drv/content-type-v1.xml b/dlls/winewayland.drv/content-type-v1.xml
 new file mode 100644
 index 00000000000..65a1acb80f4
@@ -163,7 +161,7 @@ diff --git a/dlls/winewayland.drv/wayland.c b/dlls/winewayland.drv/wayland.c
 index 4609400edbc..1fdfeaf1fbb 100644
 --- a/dlls/winewayland.drv/wayland.c
 +++ b/dlls/winewayland.drv/wayland.c
-@@ -224,6 +224,11 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
+@@ -230,6 +230,11 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
          process_wayland.xdg_toplevel_tag_manager_v1 =
              wl_registry_bind(registry, id, &xdg_toplevel_tag_manager_v1_interface, 1);
      }
@@ -172,9 +170,9 @@ index 4609400edbc..1fdfeaf1fbb 100644
 +        process_wayland.wp_content_type_manager_v1 =
 +            wl_registry_bind(registry, id, &wp_content_type_manager_v1_interface, 1);
 +    }
- }
- 
- static void registry_handle_global_remove(void *data, struct wl_registry *registry,
+     else if (strcmp(interface, "wp_color_manager_v1") == 0)
+     {
+         process_wayland.wp_color_manager_v1 =
 @@ -371,6 +376,9 @@ BOOL wayland_process_init(void)
      if (!process_wayland.xdg_toplevel_tag_manager_v1)
          WARN("Wayland compositor doesn't support optional xdg_toplevel_tag_manager_v1!\n");
@@ -189,16 +187,16 @@ diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayla
 index 728ea3893c8..76fe21af293 100644
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
-@@ -1265,6 +1265,8 @@ static void wayland_client_surface_destroy(struct client_surface *client)
+@@ -1740,6 +1740,8 @@ static void wayland_client_surface_destroy(struct client_surface *client)
  
      TRACE("%s\n", debugstr_client_surface(client));
  
 +    if (surface->wp_content_type_v1)
 +        wp_content_type_v1_destroy(surface->wp_content_type_v1);
+     if (surface->color_management)
+         wp_color_management_surface_v1_destroy(surface->color_management);
      if (surface->wp_viewport)
-         wp_viewport_destroy(surface->wp_viewport);
-     if (surface->wl_subsurface)
-@@ -1453,6 +1455,21 @@ struct wayland_client_surface *wayland_client_surface_create(HWND hwnd)
+@@ -1978,6 +1978,21 @@ struct client_surface *WAYLAND_CreateClientSurface(HWND hwnd, int pixel_format,
          goto err;
      }
  
@@ -217,34 +215,37 @@ index 728ea3893c8..76fe21af293 100644
 +        }
 +    }
 +
-     return client;
+     return &client->client;
  
  err:
 diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
 index 196f454c514..9264108aa8a 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
-@@ -43,6 +43,7 @@
+@@ -45,7 +45,8 @@
  #include "alpha-modifier-v1-client-protocol.h"
  #include "fractional-scale-v1-client-protocol.h"
+ #include "color-management-v1-client-protocol.h"
  #include "xdg-toplevel-tag-v1-client-protocol.h"
 +#include "content-type-v1-client-protocol.h"
  
  #include "windef.h"
  #include "winbase.h"
-@@ -202,6 +203,7 @@ struct wayland
+@@ -207,7 +207,8 @@ struct wayland
      struct wp_pointer_warp_v1 *wp_pointer_warp_v1;
      struct wp_alpha_modifier_v1 *wp_alpha_modifier_v1;
+     struct wp_color_manager_v1 *wp_color_manager_v1;
      struct xdg_toplevel_tag_manager_v1 *xdg_toplevel_tag_manager_v1;
 +    struct wp_content_type_manager_v1 *wp_content_type_manager_v1;
      struct wayland_seat seat;
      struct wayland_keyboard keyboard;
      struct wayland_pointer pointer;
-@@ -270,6 +272,7 @@ struct wayland_client_surface
+@@ -280,5 +280,6 @@ struct wayland_client_surface
      struct wl_surface *wl_surface;
      struct wl_subsurface *wl_subsurface;
      struct wp_viewport *wp_viewport;
 +    struct wp_content_type_v1 *wp_content_type_v1;
+     struct wp_color_management_surface_v1 *color_management;
  };
  
  struct wayland_shm_buffer

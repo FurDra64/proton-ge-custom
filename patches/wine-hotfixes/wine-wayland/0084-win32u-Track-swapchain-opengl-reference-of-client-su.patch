@@ -15,29 +15,33 @@ diff --git a/dlls/win32u/opengl.c b/dlls/win32u/opengl.c
 index 03346f5b5f6..bb3a2e0eae0 100644
 --- a/dlls/win32u/opengl.c
 +++ b/dlls/win32u/opengl.c
-@@ -117,7 +117,11 @@ void *opengl_drawable_create( UINT size, const struct opengl_drawable_funcs *fun
-     drawable->interval = INT_MIN;
-     drawable->doublebuffer = !!(pixel_formats[format - 1].pfd.dwFlags & PFD_DOUBLEBUFFER);
+@@ -374,15 +374,16 @@ void *opengl_drawable_create( const struct opengl_drawable_funcs *funcs, int fo
      drawable->stereo = !!(pixel_formats[format - 1].pfd.dwFlags & PFD_STEREO);
--    if ((drawable->client = client)) client_surface_add_ref( client );
-+    if ((drawable->client = client))
-+    {
-+        client_surface_add_ref( client );
-+        InterlockedIncrement( &client->busy_ref );
-+    }
-     for (UINT i = 0; i < ARRAY_SIZE(drawable->buffer_map); i++) drawable->buffer_map[i] = GL_FRONT_LEFT + i;
+     drawable->srgb = !!(pixel_formats[format - 1].framebuffer_srgb_capable);
  
-     TRACE( "created %s\n", debugstr_opengl_drawable( drawable ) );
-@@ -142,7 +146,11 @@ void opengl_drawable_release( struct opengl_drawable *drawable )
+     if (!(drawable->client = client)) drawable->virtual_size = drawable->monitor_size = *size;
+     else
+     {
+         drawable->hwnd = get_client_surface_window( client );
+         client_surface_get_size( client, &drawable->virtual_size, &drawable->monitor_size );
+         client_surface_add_ref( client );
++        InterlockedIncrement( &client->busy_ref );
+     }
+ 
+     opengl_drawable_map_buffer( drawable, GL_FRONT_LEFT, GL_FRONT_LEFT );
+     opengl_drawable_map_buffer( drawable, GL_FRONT, GL_FRONT );
+     opengl_drawable_map_buffer( drawable, GL_LEFT, GL_LEFT );
+     opengl_drawable_map_buffer( drawable, GL_FRONT_AND_BACK, GL_FRONT_AND_BACK );
+@@ -422,9 +422,10 @@ void opengl_drawable_release( struct opengl_drawable *drawable )
  
          drawable->funcs->destroy( drawable );
          if (drawable->surface) funcs->p_eglDestroySurface( egl->display, drawable->surface );
--        if (drawable->client) client_surface_release( drawable->client );
-+        if (drawable->client)
-+        {
+         if (drawable->client)
+         {
+             use_window_client_surface( drawable->client, FALSE );
 +            InterlockedDecrement( &drawable->client->busy_ref );
-+            client_surface_release( drawable->client );
-+        }
+             client_surface_release( drawable->client );
+         }
          free( drawable );
      }
  }
@@ -96,14 +100,13 @@ diff --git a/include/wine/gdi_driver.h b/include/wine/gdi_driver.h
 index 154c4aecd8f..eb7dae51826 100644
 --- a/include/wine/gdi_driver.h
 +++ b/include/wine/gdi_driver.h
-@@ -263,6 +263,7 @@ struct client_surface
-     const struct client_surface_funcs *funcs;
+@@ -273,5 +273,6 @@ struct client_surface
      struct list                        entry;          /* entry in win32u managed list */
      LONG                               ref;            /* reference count */
 +    LONG                               busy_ref;       /* count of drawables/swapchains referencing this surface */
      HWND                               hwnd;           /* window the surface was created for */
+     int                                format;         /* pixel format of the surface */
      LONG                               updated;        /* has been moved / resized / reparented */
-     LONG                               offscreen;      /* client window is offscreen */
 -- 
 2.55.0
 

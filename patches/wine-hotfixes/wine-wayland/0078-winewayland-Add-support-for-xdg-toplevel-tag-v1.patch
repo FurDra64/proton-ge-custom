@@ -18,8 +18,8 @@ diff --git a/dlls/winewayland.drv/Makefile.in b/dlls/winewayland.drv/Makefile.in
 index eabe00efd7d..b1267d3f28b 100644
 --- a/dlls/winewayland.drv/Makefile.in
 +++ b/dlls/winewayland.drv/Makefile.in
-@@ -32,4 +32,5 @@ SOURCES = \
- 	wlr-data-control-unstable-v1.xml \
+@@ -35,4 +35,5 @@ SOURCES = \
+ 	wlr-layer-shell-unstable-v1.xml \
  	xdg-output-unstable-v1.xml \
  	xdg-shell.xml \
 -	xdg-toplevel-icon-v1.xml
@@ -29,7 +29,7 @@ diff --git a/dlls/winewayland.drv/wayland.c b/dlls/winewayland.drv/wayland.c
 index 18f8575b2ee..4609400edbc 100644
 --- a/dlls/winewayland.drv/wayland.c
 +++ b/dlls/winewayland.drv/wayland.c
-@@ -219,6 +219,11 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
+@@ -223,6 +223,11 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
          process_wayland.wp_fractional_scale_manager_v1 =
              wl_registry_bind(registry, id, &wp_fractional_scale_manager_v1_interface, 1);
      }
@@ -38,9 +38,9 @@ index 18f8575b2ee..4609400edbc 100644
 +        process_wayland.xdg_toplevel_tag_manager_v1 =
 +            wl_registry_bind(registry, id, &xdg_toplevel_tag_manager_v1_interface, 1);
 +    }
- }
- 
- static void registry_handle_global_remove(void *data, struct wl_registry *registry,
+     else if (strcmp(interface, "wp_color_manager_v1") == 0)
+     {
+         process_wayland.wp_color_manager_v1 =
 @@ -363,6 +368,9 @@ BOOL wayland_process_init(void)
      if (!process_wayland.wp_fractional_scale_manager_v1)
          ERR("Wayland compositor doesn't support wp_fractional_scale_manager_v1 (fractional scaling will be broken)\n");
@@ -78,18 +78,20 @@ diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv
 index 92294951da7..196f454c514 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
-@@ -42,6 +42,7 @@
+@@ -43,7 +43,8 @@
  #include "pointer-warp-v1-client-protocol.h"
  #include "alpha-modifier-v1-client-protocol.h"
  #include "fractional-scale-v1-client-protocol.h"
+ #include "color-management-v1-client-protocol.h"
 +#include "xdg-toplevel-tag-v1-client-protocol.h"
  
  #include "windef.h"
  #include "winbase.h"
-@@ -200,6 +201,7 @@ struct wayland
+@@ -205,7 +205,8 @@ struct wayland
      struct wp_cursor_shape_manager_v1 *wp_cursor_shape_manager_v1;
      struct wp_pointer_warp_v1 *wp_pointer_warp_v1;
      struct wp_alpha_modifier_v1 *wp_alpha_modifier_v1;
+     struct wp_color_manager_v1 *wp_color_manager_v1;
 +    struct xdg_toplevel_tag_manager_v1 *xdg_toplevel_tag_manager_v1;
      struct wayland_seat seat;
      struct wayland_keyboard keyboard;

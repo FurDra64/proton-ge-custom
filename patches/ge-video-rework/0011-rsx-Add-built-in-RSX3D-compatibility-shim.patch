@@ -39,11 +39,12 @@ diff --git a/configure b/configure
 index bdffe3e28b25aac6d040aa59517c840bfb771455..8adc3e67f954bb496e2e5ef8274f5503d7913924 100755
 --- a/configure
 +++ b/configure
-@@ -21621,6 +21621,7 @@ wine_fn_config_makefile dlls/rsabase enable_rsabase
+@@ -21621,7 +21621,8 @@ wine_fn_config_makefile dlls/rsabase enable_rsabase
  wine_fn_config_makefile dlls/rsaenh enable_rsaenh
  wine_fn_config_makefile dlls/rsaenh/tests enable_tests
  wine_fn_config_makefile dlls/rstrtmgr enable_rstrtmgr
 +wine_fn_config_makefile dlls/rsx enable_rsx
+ wine_fn_config_makefile dlls/rtscom enable_rtscom
  wine_fn_config_makefile dlls/rtutils enable_rtutils
  wine_fn_config_makefile dlls/rtworkq enable_rtworkq
  wine_fn_config_makefile dlls/rtworkq/tests enable_tests
@@ -56,11 +57,12 @@ diff --git a/configure.ac b/configure.ac
 index 62738d99cd1760faf2b9be160af742e1c89a2222..e7723ab8ad3e358d4249889582a3fc0717830b29 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -3190,6 +3190,7 @@ WINE_CONFIG_MAKEFILE(dlls/rsabase)
+@@ -3190,7 +3190,8 @@ WINE_CONFIG_MAKEFILE(dlls/rsabase)
  WINE_CONFIG_MAKEFILE(dlls/rsaenh)
  WINE_CONFIG_MAKEFILE(dlls/rsaenh/tests)
  WINE_CONFIG_MAKEFILE(dlls/rstrtmgr)
 +WINE_CONFIG_MAKEFILE(dlls/rsx)
+ WINE_CONFIG_MAKEFILE(dlls/rtscom)
  WINE_CONFIG_MAKEFILE(dlls/rtutils)
  WINE_CONFIG_MAKEFILE(dlls/rtworkq)
  WINE_CONFIG_MAKEFILE(dlls/rtworkq/tests)

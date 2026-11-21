@@ -169,7 +169,7 @@ index 1201f814..d5bc6028 100644
      return ext->desc.product;
  }
  
-@@ -1050,10 +1117,47 @@ done:
+@@ -1063,8 +1063,43 @@ done:
      return TRUE;
  }
  
@@ -211,13 +211,20 @@ index 1201f814..d5bc6028 100644
  static void process_hid_report(DEVICE_OBJECT *device, BYTE *report_buf, DWORD report_len)
  {
      struct device_extension *ext = (struct device_extension *)device->DeviceExtension;
--    ULONG buffer_len = max(report_len, ext->desc.spoof_dualshock4 ? DUALSHOCK4_INPUT_REPORT_SIZE : 0);
-+    ULONG buffer_len = max(report_len,
+     struct hid_report *report, *last_report;
+     ULONG buffer_len, size;
+@@ -1100,8 +1100,10 @@ static void process_hid_report(DEVICE_OBJECT *device, BYTE *report_buf, DWORD re
+     if (!ext->desc.spoof_dualshock4 && report_len > last_report->length)
+     {
+         WARN("overlong report %#x length %lu truncated to declared length %lu\n", *report_buf, report_len, last_report->length);
+         report_len = last_report->length;
+     }
+ 
+-    buffer_len = max(report_len, ext->desc.spoof_dualshock4 ? DUALSHOCK4_INPUT_REPORT_SIZE : 0);
++    buffer_len = max(report_len,
 +            (ext->desc.spoof_dualshock4 || ext->desc.spoof_dualshock4_v1)
 +            ? DUALSHOCK4_INPUT_REPORT_SIZE : 0);
-     ULONG size = offsetof(struct hid_report, buffer[buffer_len]);
-     struct hid_report *report, *last_report;
-     IRP *irp;
+     size = offsetof(struct hid_report, buffer[buffer_len]);
 @@ -1071,6 +1175,11 @@ static void process_hid_report(DEVICE_OBJECT *device, BYTE *report_buf, DWORD re
          RtlFreeHeap(GetProcessHeap(), 0, report);
          return;
@@ -230,22 +237,17 @@ index 1201f814..d5bc6028 100644
  
      if (ext->report_fixups & HIDRAW_FIXUP_DUALSHOCK_BT)
      {
-@@ -1135,12 +1244,14 @@ static void process_hid_report(DEVICE_OBJECT *device, BYTE *report_buf, DWORD re
+@@ -1084,10 +1084,10 @@ static void process_hid_report(DEVICE_OBJECT *device, BYTE *report_buf, DWORD re
      }
- 
+
      if (!ext->collection_desc.ReportIDs[0].ReportID) last_report = ext->last_reports[0];
--    else if (ext->desc.spoof_dualshock4) last_report = ext->last_reports[report->buffer[0]];
-+    else if (ext->desc.spoof_dualshock4 || ext->desc.spoof_dualshock4_v1)
-+        last_report = ext->last_reports[report->buffer[0]];
+-    else if (ext->desc.spoof_dualshock4) last_report = ext->last_reports[1]; /* fixup translates every spoofed report to DS4 report #1, but report isn't allocated yet here */
++    else if (ext->desc.spoof_dualshock4 || ext->desc.spoof_dualshock4_v1) last_report = ext->last_reports[1]; /* fixup translates every spoofed report to DS4 report #1, but report isn't allocated yet here */
      else last_report = ext->last_reports[report_buf[0]];
      if (!last_report)
      {
-         WARN("Ignoring report with unexpected id %#x\n",
--                ext->desc.spoof_dualshock4 ? report->buffer[0] : *report_buf);
-+                (ext->desc.spoof_dualshock4 || ext->desc.spoof_dualshock4_v1)
-+                ? report->buffer[0] : *report_buf);
+         WARN("Ignoring report with unexpected id %#x\n", *report_buf);
          RtlLeaveCriticalSection(&ext->cs);
-         RtlFreeHeap(GetProcessHeap(), 0, report);
          return;
 @@ -1148,7 +1259,7 @@ static void process_hid_report(DEVICE_OBJECT *device, BYTE *report_buf, DWORD re
  
@@ -504,6 +506,6 @@ index 562dd46f..6ac652ea 100644
      BOOL spoof_dualshock4;
 +    BOOL spoof_dualshock4_v1;
  
-     WCHAR manufacturer[MAX_PATH];
-     WCHAR product[MAX_PATH];
+     WCHAR parent[MAX_PATH]; /* backend specific string uniquely identifying the device parent */
+     UINT index;             /* index in the parent child devices, (hint only, in case of collisions) */
 

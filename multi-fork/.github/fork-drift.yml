@@ -1,0 +1,73 @@
+name: fork-drift
+
+# Read-only drift gate for tracked forks (multi-fork v2, DESIGN.md D4).
+# Detects drift only. Never pushes, merges, or opens PRs by itself.
+# Drift findings open/update an Issue for agent pickup.
+
+on:
+  schedule:
+    - cron: "0 18 * * *" # 03:00 JST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: fork-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: probe tracked forks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Probe forks
+        id: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > drift-report.txt
+          rc=0
+          for fork in ge-upstream cachyos-proton wine-staging; do
+            if bash multi-fork/scripts/drift-check.sh \
+                --manifest multi-fork/manifest/forks.manifest.yml \
+                --fork "$fork" >> drift-report.txt 2>&1; then
+              echo "$fork: clean" >> drift-report.txt
+            else
+              echo "$fork: DRIFT (exit $?)" >> drift-report.txt
+              rc=1
+            fi
+          done
+          cat drift-report.txt
+          echo "drift=$rc" >> "$GITHUB_OUTPUT"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fork-drift-report
+          path: drift-report.txt
+          retention-days: 14
+
+      - name: File drift Issue
+        if: steps.probe.outputs.drift == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TITLE="[fork-drift] upstream drift detected"
+          BODY="$(printf 'Drift probe found updates behind tracked forks.\n\n```\n%s\n```\n\nSee run logs + drift-report.txt artifact. Follow triage/TEMPLATE.md.' "$(cat drift-report.txt)")"
+          EXISTING="$(gh issue list --label fork-drift --state open --search "upstream drift detected in:title" --json number --jq '.[0].number // empty' || true)"
+          if [[ -n "$EXISTING" ]]; then
+            gh issue comment "$EXISTING" --body "$BODY" || true
+          else
+            gh label create fork-drift --color 0E8A16 --description "Tracked fork drifted" || true
+            gh issue create --title "$TITLE" --label fork-drift --body "$BODY" || true
+          fi

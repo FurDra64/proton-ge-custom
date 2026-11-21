@@ -1,31 +1,23 @@
-From 550f2fc48bdf84ec1975290c3f6a288a7c5f8729 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Erhan Bilgili <erhan.bilgili@gmail.com>
-Date: Sat, 8 Aug 2026 14:42:44 +0200
-Subject: [PATCH] winewayland.drv: Honor xdg-shell suspended state
+Date: Wed, 22 Jul 2026 08:50:14 +0200
+Subject: [PATCH] winewayland: Honor xdg-shell suspended state
 
-Bind xdg_wm_base at up to version 6 and track suspended separately
-from geometry-managed states.
+Compositors report XDG_TOPLEVEL_STATE_SUSPENDED when a surface is not
+ordinarily being repainted (occluded, workspace hidden, outputs off).
+Bind xdg_wm_base version 6, track the state per surface config, stop
+producer updates while suspended, and resume stacking and dmabuf
+consumers when repainting resumes.
 
-Pause managed dma-buf producers and reject new direct attachments while
-the compositor is not repainting the toplevel, then reactivate them on
-resume.
-
-Keep an opaque client surface stacked below its carrier while the
-toplevel is suspended, then restore its logical stacking position on
-resume. This keeps child-rendered fullscreen content associated with its
-compositor workspace.
-
-This complements Wine's process-local occlusion handling; neither
-mechanism replaces the other.
-
-Source: https://github.com/nanomatters/wine-wineland/commit/550f2fc48bdf84ec1975290c3f6a288a7c5f8729
+Ported from:
+https://github.com/nanomatters/wine-wineland
 ---
- dlls/winewayland.drv/wayland.c         |  5 ++-
- dlls/winewayland.drv/wayland_surface.c | 79 +++++++++++++++++++++++++++++----
- dlls/winewayland.drv/waylanddrv.h      |  3 +-
- dlls/winewayland.drv/window.c          |  6 +--
- dlls/winewayland.drv/xdg-shell.xml     | 17 ++++---
- 5 files changed, 91 insertions(+), 19 deletions(-)
+ dlls/winewayland.drv/wayland.c         |  3 ++-
+ dlls/winewayland.drv/wayland_surface.c | 60 ++++++++++++++++++++++++++++++++--
+ dlls/winewayland.drv/waylanddrv.h      |  3 ++-
+ dlls/winewayland.drv/window.c          |  6 ++---
+ dlls/winewayland.drv/xdg-shell.xml     |  9 ++++++++-
+ 5 files changed, 72 insertions(+), 9 deletions(-)
 
 diff --git a/dlls/winewayland.drv/wayland.c b/dlls/winewayland.drv/wayland.c
 index 340e360cb5d..212a3c31fcf 100644
@@ -48,20 +40,19 @@ diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayla
 index f324f538b7b..02754512c98 100644
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
-@@ -47,6 +47,9 @@ static void wayland_surface_clear_direct_dmabuf(struct wayland_surface *surface,
-                                                 struct wayland_win_data *data);
+@@ -743,4 +743,7 @@ static const struct wayland_surface_config *wayland_surface_latest_config(struct
  void wayland_surface_update_hwnd_dmabufs(struct wayland_surface *surface);
  static BOOL wayland_surface_try_direct_dmabuf(HWND hwnd);
 +static void wayland_client_surface_stack(struct wayland_surface *surface,
 +                                         struct wayland_client_surface *client,
 +                                         BOOL stack_above_parent);
- 
+
  struct wayland_child_visibility_info
- {
-@@ -892,6 +895,13 @@ static const struct wayland_surface_config *wayland_surface_latest_config(struct
+@@ -1045,6 +1048,13 @@ static const struct wayland_surface_config *wayland_surface_latest_config(struct
+     if (surface->current.serial) return &surface->current;
      return NULL;
  }
- 
+
 +static BOOL wayland_surface_repaint_suspended(struct wayland_surface *surface)
 +{
 +    const struct wayland_surface_config *config = wayland_surface_latest_config(surface);
@@ -71,18 +62,14 @@ index f324f538b7b..02754512c98 100644
 +
  static void wayland_surface_config_inherit_caps_and_bounds(struct wayland_surface_config *config,
                                                             struct wayland_surface *surface)
- {
-@@ -930,6 +940,8 @@ static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg_
- 
+@@ -1085,4 +1095,6 @@ static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg
+
      if (wayland_surface_is_toplevel(surface))
      {
 +        BOOL was_suspended = wayland_surface_repaint_suspended(surface);
 +
          /* If we have a previously requested config, we have already sent a
-          * WM_WAYLAND_CONFIGURE which hasn't been handled yet. In that case,
-          * avoid sending another message to reduce message queue traffic. */
-@@ -949,6 +961,22 @@ static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg_
-         }
+@@ -1104,4 +1116,20 @@ static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg
          surface->requested = surface->pending;
          memset(&surface->pending, 0, sizeof(surface->pending));
 +
@@ -103,8 +90,7 @@ index f324f538b7b..02754512c98 100644
 +        }
      }
      else if (wayland_surface_is_popup(surface))
-     {
-@@ -1007,6 +1035,9 @@ static void xdg_toplevel_handle_configure(void *private,
+@@ -1161,5 +1181,8 @@ static void xdg_toplevel_handle_configure(void *private,
          case XDG_TOPLEVEL_STATE_FULLSCREEN:
              config_state |= WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN;
              break;
@@ -113,25 +99,24 @@ index f324f538b7b..02754512c98 100644
 +            break;
          default:
              break;
-         }
-@@ -1024,7 +1055,8 @@ static void xdg_toplevel_handle_configure(void *private,
- 
+@@ -1178,7 +1208,8 @@ static void xdg_toplevel_handle_configure(void *private,
+
      wayland_win_data_release(data);
- 
+
 -    TRACE("hwnd=%p %s,%#x\n", hwnd, wine_dbgstr_rect(&rect), config_state);
 +    TRACE("hwnd=%p %s,%#x suspended=%u\n", hwnd, wine_dbgstr_rect(&rect), config_state,
 +          !!(config_state & WAYLAND_SURFACE_CONFIG_STATE_SUSPENDED));
  }
- 
+
  static void xdg_toplevel_handle_close(void *data, struct xdg_toplevel *xdg_toplevel)
-@@ -2443,9 +2475,13 @@ static void wayland_client_surface_stack(struct wayland_surface *surface,
+@@ -2717,9 +2746,13 @@ static void wayland_client_surface_stack(struct wayland_surface *surface,
                                           struct wayland_client_surface *client,
                                           BOOL stack_above_parent)
  {
 +    BOOL effective_stack_above_parent;
 +
      if (!client->wl_subsurface) return;
- 
+
 -    if (stack_above_parent)
 +    effective_stack_above_parent = stack_above_parent &&
 +                                    !wayland_surface_repaint_suspended(surface);
@@ -139,9 +124,7 @@ index f324f538b7b..02754512c98 100644
          wl_subsurface_place_above(client->wl_subsurface, surface->wl_surface);
      else
          wl_subsurface_place_below(client->wl_subsurface,
-@@ -3656,11 +3692,12 @@ static BOOL wayland_surface_try_direct_dmabuf(HWND hwnd)
-         }
- 
+@@ -3928,9 +3962,10 @@ static BOOL wayland_surface_try_direct_dmabuf(HWND hwnd)
          had_direct = surface && surface->direct_dmabuf_surface;
 -        may_try = surface && (had_direct ||
 -                              (wayland_surface_is_toplevel(surface) &&
@@ -157,19 +140,19 @@ index f324f538b7b..02754512c98 100644
          wayland_win_data_release(data);
      }
      if (!may_try) return FALSE;
-@@ -3711,7 +3748,7 @@ void wayland_surface_reannounce_hwnd_dmabuf_consumers(struct wayland_surface *su
+@@ -3984,7 +4018,7 @@ void wayland_surface_reannounce_hwnd_dmabuf_consumers(struct wayland_surface *su
          surface->direct_dmabuf_surface->consumer_state = WAYLAND_HWNDDMABUF_CONSUMER_UNKNOWN;
  }
- 
+
 -/* Stop publishing while this surface cannot import producer frames. */
 +/* Stop producer updates while new frames cannot be displayed. */
  static void wayland_surface_suspend_hwnd_dmabuf_consumers(struct wayland_surface *surface)
  {
      struct wayland_hwnd_dmabuf_surface *dmabuf_surface;
-@@ -3729,6 +3766,23 @@ static void wayland_surface_suspend_hwnd_dmabuf_consumers(struct wayland_surface
+@@ -3999,6 +4035,23 @@ static void wayland_surface_suspend_hwnd_dmabuf_consumers(struct wayland_surface
          dmabuf_surface->consumer_state = WAYLAND_HWNDDMABUF_CONSUMER_SUSPENDED;
  }
- 
+
 +static void wayland_surface_activate_hwnd_dmabuf_consumers(struct wayland_surface *surface)
 +{
 +    struct wayland_hwnd_dmabuf_surface *dmabuf_surface;
@@ -190,10 +173,10 @@ index f324f538b7b..02754512c98 100644
  void wayland_surface_update_hwnd_dmabufs(struct wayland_surface *surface)
  {
      hwnd_dmabuf_frame_info_t stack_frames[16], *frames = stack_frames;
-@@ -3771,6 +3825,15 @@ void wayland_surface_update_hwnd_dmabufs(struct wayland_surface *surface)
-         status = wine_hwnd_dmabuf_list(surface->hwnd, frames, total, &total, &count);
+@@ -4040,5 +4092,15 @@ void wayland_surface_update_hwnd_dmabufs(struct wayland_surface *surface)
          if (status != HWND_DMABUF_OK) count = 0;
      }
+
 +    if (surface->role == WAYLAND_SURFACE_ROLE_TOPLEVEL)
 +    {
 +        if (surface->window.minimized || wayland_surface_repaint_suspended(surface))
@@ -203,14 +186,14 @@ index f324f538b7b..02754512c98 100644
 +        }
 +        wayland_surface_activate_hwnd_dmabuf_consumers(surface);
 +    }
- 
++
      data = wayland_win_data_get_nolock(surface->hwnd);
      if (wayland_surface_update_direct_dmabuf(surface, data, frames, count, now))
 diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
 index 8d025c00d5f..564fcbdcb43 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
-@@ -94,7 +94,8 @@ enum wayland_surface_config_state
+@@ -96,5 +94,6 @@ enum wayland_surface_config_state
      WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED = (1 << 0),
      WAYLAND_SURFACE_CONFIG_STATE_RESIZING = (1 << 1),
      WAYLAND_SURFACE_CONFIG_STATE_TILED = (1 << 2),
@@ -218,16 +201,11 @@ index 8d025c00d5f..564fcbdcb43 100644
 +    WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN = (1 << 3),
 +    WAYLAND_SURFACE_CONFIG_STATE_SUSPENDED = (1 << 4)
  };
- 
- enum wayland_surface_role
 diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
 index c5b1cb32cef..a5d9fe2e672 100644
 --- a/dlls/winewayland.drv/window.c
 +++ b/dlls/winewayland.drv/window.c
-@@ -1018,9 +1018,9 @@ static void wayland_configure_window(HWND hwnd)
-      * their sizes cannot change while we are still processing the new config.
-      * This allows us to respect the size hint on transitions of maximized/tiled
-      * to a stateless regular window. */
+@@ -1037,6 +1037,6 @@ static void wayland_configure_window(HWND hwnd)
 -    if (state || surface->current.state &
 -        (WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED |
 -               WAYLAND_SURFACE_CONFIG_STATE_TILED))
@@ -244,7 +222,7 @@ index 1df70014601..180efa7df7a 100644
 @@ -29,7 +29,7 @@
      DEALINGS IN THE SOFTWARE.
    </copyright>
- 
+
 -  <interface name="xdg_wm_base" version="5">
 +  <interface name="xdg_wm_base" version="6">
      <description summary="create desktop-style surfaces">
@@ -253,7 +231,7 @@ index 1df70014601..180efa7df7a 100644
 @@ -122,7 +122,7 @@
      </event>
    </interface>
- 
+
 -  <interface name="xdg_positioner" version="5">
 +  <interface name="xdg_positioner" version="6">
      <description summary="child surface positioner">
@@ -262,16 +240,15 @@ index 1df70014601..180efa7df7a 100644
 @@ -407,7 +407,7 @@
      </request>
    </interface>
- 
+
 -  <interface name="xdg_surface" version="5">
 +  <interface name="xdg_surface" version="6">
      <description summary="desktop user interface surface base interface">
        An interface that may be implemented by a wl_surface, for
        implementations that provide a desktop-style user interface.
-@@ -606,7 +606,7 @@
- 
+@@ -607,6 +606,6 @@
    </interface>
- 
+
 -  <interface name="xdg_toplevel" version="5">
 +  <interface name="xdg_toplevel" version="6">
      <description summary="toplevel surface">
@@ -291,7 +268,7 @@ index 1df70014601..180efa7df7a 100644
      </enum>
  
      <request name="set_max_size">
-@@ -1175,7 +1182,7 @@
+@@ -1176,7 +1178,7 @@
      </event>
    </interface>
  

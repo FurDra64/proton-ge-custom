@@ -47,28 +47,10 @@ stop the async reader from delivering another stream's ready sample; otherwise
 the video queue can fill, blocking decoder drain and freezing playback while
 audio continues.
 ---
- dlls/qasf/asfreader.c         |  5 ++-
- dlls/winedmo/unix_transform.c | 57 ++++++++++++++++++++++++++++++---
- dlls/winedmo/wm_reader.c      |  6 ++--
- dlls/wmvcore/async_reader.c   | 74 +++++++++++++++++++++++++++++++++++++++++--
- 4 files changed, 132 insertions(+), 10 deletions(-)
+ dlls/winedmo/unix_transform.c | 57 +++++++++++++++++++++++++++++++++++++++----
+ dlls/winedmo/wm_reader.c      |  6 +++--
+ 2 files changed, 56 insertions(+), 7 deletions(-)
 
-diff --git a/dlls/qasf/asfreader.c b/dlls/qasf/asfreader.c
-index dacfccf54abfc4dbf6ae53b7fa1ebd497c5548fe..480c525fca9daf2f84b1d283440cfce574ec8997 100644
---- a/dlls/qasf/asfreader.c
-+++ b/dlls/qasf/asfreader.c
-@@ -527,7 +527,10 @@ static HRESULT asf_reader_init_stream(struct strmbase_filter *iface)
-         if (!stream->source.pin.peer)
-             continue;
- 
--        value = IMemInputPin_ReceiveCanBlock(stream->source.pMemInputPin) == S_OK;
-+        /* WMReader already paces async samples. Deliver qasf outputs from the
-+         * callback thread so audio and video callbacks stay in timestamp order
-+         * instead of drifting on separate delivery threads. */
-+        value = FALSE;
-         if (FAILED(hr = IWMReaderAdvanced2_SetOutputSetting(reader_advanced, i, L"DedicatedDeliveryThread",
-                 WMT_TYPE_BOOL, (BYTE *)&value, sizeof(value))))
-         {
 diff --git a/dlls/winedmo/unix_transform.c b/dlls/winedmo/unix_transform.c
 index e885952784f58a7d3faa481355eec4833083cffe..7b4d65d63f13de647eae6caf791e7842703b70a9 100644
 --- a/dlls/winedmo/unix_transform.c
@@ -193,7 +175,7 @@ index e885952784f58a7d3faa481355eec4833083cffe..7b4d65d63f13de647eae6caf791e7842
      t->video_pts_offset   = INT64_MIN;
      t->cumulative_samples = 0;
 diff --git a/dlls/winedmo/wm_reader.c b/dlls/winedmo/wm_reader.c
-index 22a7628a66c12df4c261ebb44e0c989816d999cb..e109b55857666778650fee7fb3886f8089491056 100644
+index bcc9ed0ac93add18d8fbe8606026a6d2c07a6fed..26e4fc71e68b7a7bb93abf4ba5b18a1b0c44b08b 100644
 --- a/dlls/winedmo/wm_reader.c
 +++ b/dlls/winedmo/wm_reader.c
 @@ -1024,9 +1024,11 @@ static BOOL wm_stream_wait_queue_space(struct wm_reader *reader, struct wm_strea
@@ -210,137 +192,3 @@ index 22a7628a66c12df4c261ebb44e0c989816d999cb..e109b55857666778650fee7fb3886f80
      EnterCriticalSection(&stream->queue_cs);
      while (!reader->demux_shutdown && !stream->queue_flushing
              && stream->selection != WMT_OFF && stream->queued_packets >= 256)
-diff --git a/dlls/wmvcore/async_reader.c b/dlls/wmvcore/async_reader.c
-index ff0d4805fa73412d6a7f5b7d4209bfed684f552e..d05f90135e4840deba8bd5c5ca2b3d104ddb38bd 100644
---- a/dlls/wmvcore/async_reader.c
-+++ b/dlls/wmvcore/async_reader.c
-@@ -83,6 +83,9 @@ struct stream
-     struct list deliver_samples;
-     CONDITION_VARIABLE deliver_cv;
- 
-+    bool delivered_sample;
-+    QWORD last_delivered_pts;
-+
-     bool running;
- };
- 
-@@ -298,6 +301,7 @@ static void async_reader_deliver_sample(struct async_reader *reader, struct samp
- {
-     IWMReaderCallbackAdvanced *callback_advanced = reader->callback_advanced;
-     IWMReaderCallback *callback = reader->callback;
-+    struct stream *stream = reader->streams + sample->output;
-     BOOL read_compressed;
-     HRESULT hr;
- 
-@@ -318,6 +322,9 @@ static void async_reader_deliver_sample(struct async_reader *reader, struct samp
-                 sample->flags, sample->buffer, reader->context);
-     EnterCriticalSection(&reader->callback_cs);
- 
-+    stream->delivered_sample = true;
-+    stream->last_delivered_pts = sample->pts;
-+
-     TRACE("Callback returned %#lx.\n", hr);
- 
-     list_remove(&sample->entry);
-@@ -537,6 +544,44 @@ static HRESULT async_reader_open_all_streams(struct async_reader *reader)
-     return S_OK;
- }
- 
-+static void async_reader_wait_initial_samples(struct async_reader *reader)
-+{
-+    DWORD start = GetTickCount();
-+
-+    while (reader->running && list_empty(&reader->async_ops))
-+    {
-+        BOOL waiting = FALSE;
-+        DWORD i;
-+
-+        for (i = 0; i < reader->stream_count; ++i)
-+        {
-+            struct stream *stream = reader->streams + i;
-+            WMT_STREAM_SELECTION selection;
-+
-+            if (FAILED(IWMSyncReader2_GetStreamSelected(reader->reader, i + 1, &selection))
-+                    || selection == WMT_OFF)
-+                continue;
-+
-+            if (list_empty(&stream->read_samples) && stream->read_result == E_PENDING)
-+            {
-+                waiting = TRUE;
-+                break;
-+            }
-+        }
-+
-+        if (!waiting)
-+            return;
-+
-+        if (GetTickCount() - start >= 5000)
-+        {
-+            WARN("Timed out waiting for initial samples, starting reader clock anyway.\n");
-+            return;
-+        }
-+
-+        SleepConditionVariableCS(&reader->callback_cv, &reader->callback_cs, 50);
-+    }
-+}
-+
- static HRESULT async_reader_get_next_sample(struct async_reader *reader,
-         struct stream **out_stream, struct sample **out_sample)
- {
-@@ -559,7 +604,7 @@ static HRESULT async_reader_get_next_sample(struct async_reader *reader,
-         if (!(entry = list_head(&stream->read_samples)))
-         {
-             if (stream->read_result == E_PENDING)
--                return E_PENDING;
-+                pending = TRUE;
-             continue;
-         }
- 
-@@ -574,6 +619,27 @@ static HRESULT async_reader_get_next_sample(struct async_reader *reader,
-     if (!first_sample)
-         return pending ? E_PENDING : NS_E_NO_MORE_SAMPLES;
- 
-+    for (i = 0; i < reader->stream_count; ++i)
-+    {
-+        stream = reader->streams + i;
-+
-+        if (stream == first_stream)
-+            continue;
-+        if (FAILED(IWMSyncReader2_GetStreamSelected(reader->reader, i + 1, &selection))
-+                || selection == WMT_OFF)
-+            continue;
-+        if (!list_empty(&stream->read_samples) || stream->read_result != E_PENDING)
-+            continue;
-+
-+        if (stream->delivered_sample && first_sample->pts > stream->last_delivered_pts + 10000000)
-+        {
-+            TRACE("Waiting for stream %u before delivering stream %u sample %s past %s.\n",
-+                    stream->number, first_stream->number, debugstr_time(first_sample->pts),
-+                    debugstr_time(stream->last_delivered_pts));
-+            return E_PENDING;
-+        }
-+    }
-+
-     TRACE("Found first stream %u with pts %I64d.\n", first_stream->number, first_sample->pts);
-     *out_sample = first_sample;
-     *out_stream = first_stream;
-@@ -693,7 +759,6 @@ static DWORD WINAPI async_reader_callback_thread(void *arg)
-                     {
-                         reader->active_start = op->u.start.start;
-                         reader->active_duration = op->u.start.duration;
--                        reader->clock_start = get_current_time(reader);
- 
-                         if (FAILED(hr = async_reader_open_all_streams(reader)))
-                         {
-@@ -705,6 +770,11 @@ static DWORD WINAPI async_reader_callback_thread(void *arg)
-                             EnterCriticalSection(&reader->callback_cs);
-                             reader->running = false;
-                         }
-+                        else
-+                        {
-+                            async_reader_wait_initial_samples(reader);
-+                            reader->clock_start = get_current_time(reader);
-+                        }
-                     }
- 
-                     LeaveCriticalSection(&reader->callback_cs);

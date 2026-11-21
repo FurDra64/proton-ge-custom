@@ -32,27 +32,28 @@ diff --git a/dlls/win32u/opengl.c b/dlls/win32u/opengl.c
 index 7bb204847ff..a9bbea3a12b 100644
 --- a/dlls/win32u/opengl.c
 +++ b/dlls/win32u/opengl.c
-@@ -157,10 +157,8 @@ void opengl_drawable_release( struct opengl_drawable *drawable )
+@@ -427,11 +427,9 @@ void opengl_drawable_release( struct opengl_drawable *drawable )
          if (drawable->client)
          {
              if (drawable->client_active)
 -                InterlockedDecrement( &drawable->client->native_ref );
 +                client_surface_deactivate( drawable->client, TRUE );
+             use_window_client_surface( drawable->client, FALSE );
              InterlockedDecrement( &drawable->client->busy_ref );
 -            if (drawable->client_active)
 -                client_surface_update( drawable->client );
              client_surface_release( drawable->client );
          }
          free( drawable );
-@@ -2107,7 +2105,7 @@ static struct opengl_drawable *get_window_unused_drawable( HWND hwnd, int format
-         driver_funcs->p_surface_create( hwnd, raw, format, &drawable );
-         if (drawable && drawable->client)
-         {
--            InterlockedIncrement( &drawable->client->native_ref );
-+            client_surface_activate( drawable->client, TRUE, NULL );
-             drawable->client_active = TRUE;
-             add_window_client_surface( hwnd, drawable->client );
-         }
+@@ -2354,7 +2352,7 @@ static struct opengl_drawable *get_window_unused_drawable( HWND hwnd, int format
+             use_window_client_surface( client, !!drawable );
+             if (drawable && drawable->client)
+             {
+-                InterlockedIncrement( &drawable->client->native_ref );
++                client_surface_activate( drawable->client, TRUE, NULL );
+                 drawable->client_active = TRUE;
+             }
+             client_surface_release( client );
 diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
 index 3b0674198d9..f9b75bfa0a7 100644
 --- a/dlls/win32u/vulkan.c
@@ -407,15 +408,14 @@ index 3b0674198d9..f9b75bfa0a7 100644
  static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwapchainCreateInfoKHR *create_info,
                                               const VkAllocationCallbacks *allocator, VkSwapchainKHR *ret )
  {
-@@ -3799,6 +4055,7 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
+@@ -4885,5 +5140,6 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
      VkSwapchainKHR host_swapchain;
      uint32_t format_count = 0;
      VkSurfaceFormatKHR *formats;
 +    BOOL presentation_owner;
+     struct ratio raw_dpi;
      RECT client_rect;
-     VkResult res;
- 
-@@ -3808,6 +4065,8 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
+@@ -3808,6 +4064,8 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
          return VK_ERROR_INITIALIZATION_FAILED;
      }
  
@@ -424,7 +424,7 @@ index 3b0674198d9..f9b75bfa0a7 100644
      if (surface) create_info_host.surface = surface->obj.host.surface;
      if (old_swapchain) create_info_host.oldSwapchain = old_swapchain->obj.host.swapchain;
  
-@@ -3847,7 +4106,8 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
+@@ -3847,7 +4105,8 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
  
      if (!(swapchain = calloc( 1, sizeof(*swapchain) ))) return VK_ERROR_OUT_OF_HOST_MEMORY;
  
@@ -434,7 +434,7 @@ index 3b0674198d9..f9b75bfa0a7 100644
      {
          if (!(capabilities.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT))
              FIXME( "Swapchain does not support required VK_IMAGE_USAGE_STORAGE_BIT\n" );
-@@ -3909,6 +4169,28 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
+@@ -3909,6 +4168,28 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
      InterlockedIncrement( &surface->client->busy_ref );
      client_surface_update( surface->client );
  
@@ -463,7 +463,7 @@ index 3b0674198d9..f9b75bfa0a7 100644
      /* Interpose a managed cross-process producer only when the window advertises
       * HWND dmabuf caps (an off-screen child whose toplevel has no wl_surface) and
       * the host supports dmabuf external memory. On-screen windows return no caps
-@@ -3929,20 +4211,8 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
+@@ -3929,20 +4210,8 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
  
              res = managed_swapchain_create( device, surface, &managed_info, &managed );
              if (res == VK_SUCCESS && managed)
@@ -486,7 +486,7 @@ index 3b0674198d9..f9b75bfa0a7 100644
              /* Any failure -> fall through to the host swapchain path (never fail). */
              TRACE( "managed swapchain build failed (res %d) for hwnd %p, using host swapchain\n",
                     res, surface->hwnd );
-@@ -3959,10 +4229,15 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
+@@ -3959,10 +4228,15 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
                 surface->hwnd, device->extensions.has_VK_EXT_external_memory_dma_buf );
      }
  
@@ -503,7 +503,7 @@ index 3b0674198d9..f9b75bfa0a7 100644
          free( swapchain );
          return res;
      }
-@@ -3981,6 +4256,10 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
+@@ -3981,6 +4255,10 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
          {
              ERR( "creating fs hack images failed: %d\n", res );
              device->p_vkDestroySwapchainKHR( device->host.device, swapchain->obj.host.swapchain, NULL );
@@ -514,7 +514,7 @@ index 3b0674198d9..f9b75bfa0a7 100644
              free( swapchain );
              return res;
          }
-@@ -3989,6 +4268,10 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
+@@ -3989,6 +4267,10 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
          {
              ERR( "creating blit images failed: %d\n", res );
              device->p_vkDestroySwapchainKHR( device->host.device, swapchain->obj.host.swapchain, NULL );
@@ -525,7 +525,7 @@ index 3b0674198d9..f9b75bfa0a7 100644
              free( swapchain );
              return res;
          }
-@@ -3997,10 +4280,17 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
+@@ -3997,10 +4279,17 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
                debugstr_vkextent2d(&swapchain->extents), debugstr_vkextent2d(&swapchain->host_extents) );
      }
  
@@ -545,7 +545,7 @@ index 3b0674198d9..f9b75bfa0a7 100644
      *ret = swapchain->obj.client.swapchain;
      return VK_SUCCESS;
  }
-@@ -4012,7 +4302,6 @@ void win32u_vkDestroySwapchainKHR( VkDevice client_device, VkSwapchainKHR client
+@@ -4012,7 +4301,6 @@ void win32u_vkDestroySwapchainKHR( VkDevice client_device, VkSwapchainKHR client
      struct vulkan_instance *instance = device->physical_device->instance;
      struct swapchain *swapchain = swapchain_from_handle( client_swapchain );
      struct surface *surface;
@@ -553,7 +553,7 @@ index 3b0674198d9..f9b75bfa0a7 100644
  
      if (allocator) FIXME( "Support for allocation callbacks not implemented yet\n" );
      if (!swapchain) return;
-@@ -4039,7 +4328,6 @@ void win32u_vkDestroySwapchainKHR( VkDevice client_device, VkSwapchainKHR client
+@@ -4039,7 +4327,6 @@ void win32u_vkDestroySwapchainKHR( VkDevice client_device, VkSwapchainKHR client
          free( swapchain->fs_hack_images );
      }
  
@@ -561,7 +561,7 @@ index 3b0674198d9..f9b75bfa0a7 100644
      if (swapchain->managed)
      {
          /* managed: idle, close fds, destroy images+memory, free. No host swapchain. */
-@@ -4052,16 +4340,62 @@ void win32u_vkDestroySwapchainKHR( VkDevice client_device, VkSwapchainKHR client
+@@ -4052,16 +4339,62 @@ void win32u_vkDestroySwapchainKHR( VkDevice client_device, VkSwapchainKHR client
      }
      if ((surface = swapchain->surface))
      {
@@ -628,7 +628,7 @@ index 3b0674198d9..f9b75bfa0a7 100644
  static VkResult win32u_vkAcquireNextImage2KHR( VkDevice client_device, const VkAcquireNextImageInfoKHR *acquire_info,
                                                 uint32_t *image_index )
  {
-@@ -4085,7 +4419,7 @@ static VkResult win32u_vkAcquireNextImage2KHR( VkDevice client_device, const VkA
+@@ -4085,7 +4418,7 @@ static VkResult win32u_vkAcquireNextImage2KHR( VkDevice client_device, const VkA
      acquire_info_host.swapchain = swapchain->obj.host.swapchain;
      acquire_info_host.semaphore = semaphore ? semaphore->host.semaphore : 0;
      acquire_info_host.fence = fence ? fence->host.fence : 0;
@@ -637,7 +637,7 @@ index 3b0674198d9..f9b75bfa0a7 100644
  
      if (!res && swapchain->fshack_dpi != surface_get_fshack_dpi( surface ))
      {
-@@ -4123,9 +4457,9 @@ static VkResult win32u_vkAcquireNextImageKHR( VkDevice client_device, VkSwapchai
+@@ -4123,9 +4456,9 @@ static VkResult win32u_vkAcquireNextImageKHR( VkDevice client_device, VkSwapchai
          return managed_acquire( device, swapchain, semaphore ? semaphore->host.semaphore : 0,
                                  fence ? fence->host.fence : 0, image_index );
  
@@ -650,7 +650,7 @@ index 3b0674198d9..f9b75bfa0a7 100644
  
      if (!res && swapchain->fshack_dpi != surface_get_fshack_dpi( surface ))
      {
-@@ -4998,7 +5332,8 @@ host_present_done:
+@@ -4998,7 +5331,8 @@ host_present_done:
          struct surface *surface = swapchain->surface;
          RECT client_rect;
  
@@ -664,8 +664,8 @@ diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
 index 4633be4a697..78b073dfef7 100644
 --- a/dlls/win32u/window.c
 +++ b/dlls/win32u/window.c
-@@ -384,6 +384,55 @@ void client_surface_update( struct client_surface *surface )
-     pthread_mutex_unlock( &surfaces_lock );
+@@ -381,5 +381,54 @@ void client_surface_update( struct client_surface *surface )
+                        !EqualRect( &surface->monitor_rect, &monitor_rect );
  }
  
 +BOOL client_surface_is_presentation_candidate( struct client_surface *surface )
@@ -717,40 +717,13 @@ index 4633be4a697..78b073dfef7 100644
 +    pthread_mutex_unlock( &surfaces_lock );
 +}
 +
- void add_window_client_surface( HWND hwnd, struct client_surface *surface )
+ void update_client_surfaces( HWND hwnd )
  {
-     pthread_mutex_lock( &surfaces_lock );
-diff --git a/dlls/winewayland.drv/vulkan.c b/dlls/winewayland.drv/vulkan.c
-index 05eb2672c6f..44404656955 100644
---- a/dlls/winewayland.drv/vulkan.c
-+++ b/dlls/winewayland.drv/vulkan.c
-@@ -59,7 +59,8 @@ static struct wayland_client_surface *stash_client_surface(HWND hwnd,
-         client_surface_add_ref(&surface->client);
-         data->stashed_client = surface;
-     }
--    else if ((ret = data->stashed_client) && !ReadAcquire(&ret->client.busy_ref))
-+    else if ((ret = data->stashed_client) && ReadAcquire(&ret->client.ref) == 1 &&
-+             !ReadAcquire(&ret->client.busy_ref))
-     {
-         /* cannot decrease the ref count here as there is a
-          * new VkSurface referencing this client surface */
-@@ -71,6 +72,11 @@ static struct wayland_client_surface *stash_client_surface(HWND hwnd,
-             InterlockedExchange(&ret->client.presentation_owner, FALSE);
-             data->client_surface = NULL;
-         }
-+        if (!list_empty(&ret->hwnd_entry))
-+        {
-+            list_remove(&ret->hwnd_entry);
-+            list_init(&ret->hwnd_entry);
-+        }
-     }
-     else ret = NULL;
- 
 diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayland_surface.c
 index a909cfb3d27..b0ac844d3c7 100644
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
-@@ -4490,11 +4490,7 @@ static void wayland_client_surface_register(struct wayland_win_data *data,
+@@ -4801,11 +4801,7 @@ static void wayland_client_surface_register(struct wayland_win_data *data,
                                              struct wayland_client_surface *surface)
  {
      if (list_empty(&surface->hwnd_entry))
@@ -762,7 +735,7 @@ index a909cfb3d27..b0ac844d3c7 100644
  }
  
  static void wayland_client_surface_unregister(struct wayland_client_surface *surface)
-@@ -4508,41 +4504,80 @@ static void wayland_client_surface_register_latest(
+@@ -4819,41 +4815,80 @@ static void wayland_client_surface_register_latest(
          struct wayland_win_data *data, struct wayland_client_surface *surface)
  {
      wayland_client_surface_unregister(surface);
@@ -862,7 +835,7 @@ index a909cfb3d27..b0ac844d3c7 100644
  }
  
  void wayland_client_surfaces_attach(struct wayland_win_data *data, HWND toplevel)
-@@ -4551,20 +4586,16 @@ void wayland_client_surfaces_attach(struct wayland_win_data *data, HWND toplevel
+@@ -4862,20 +4897,16 @@ void wayland_client_surfaces_attach(struct wayland_win_data *data, HWND toplevel
      struct wayland_client_surface *owner = data->client_surface;
      BOOL visible = toplevel && is_client_visible(data->hwnd);
  
@@ -888,7 +861,7 @@ index a909cfb3d27..b0ac844d3c7 100644
              wayland_client_surface_attach(surface, toplevel);
          else
              wayland_client_surface_attach(surface, NULL);
-@@ -4579,21 +4610,14 @@ void wayland_client_surfaces_attach(struct wayland_win_data *data, HWND toplevel
+@@ -4890,21 +4921,14 @@ void wayland_client_surfaces_attach(struct wayland_win_data *data, HWND toplevel
  
  static void wayland_client_surface_update_owner(struct wayland_win_data *data)
  {
@@ -917,10 +890,10 @@ index a909cfb3d27..b0ac844d3c7 100644
      wayland_client_surfaces_attach(data, NtUserGetAncestor(data->hwnd, GA_ROOT));
  }
  
-@@ -4608,8 +4632,9 @@ static void wayland_client_surface_destroy(struct client_surface *client)
+@@ -4918,10 +4942,11 @@ static void wayland_client_surface_destroy(struct client_surface *client)
      if ((data = wayland_win_data_get(client->hwnd)))
      {
-         wayland_client_surface_attach(surface, NULL);
+         wayland_client_surface_attach(surface, NULL, NULL);
 +        if (data->client_surface == surface)
 +            wayland_client_surface_restore_owner(data, surface);
          wayland_client_surface_unregister(surface);
@@ -928,10 +901,12 @@ index a909cfb3d27..b0ac844d3c7 100644
          wayland_client_surface_update_owner(data);
          wayland_win_data_release(data);
      }
-@@ -4643,8 +4668,9 @@ static void wayland_client_surface_detach(struct client_surface *client)
+     else
+         wayland_client_surface_unregister(surface);
+@@ -4956,10 +4981,11 @@ static void wayland_client_surface_detach(struct client_surface *client)
      if ((data = wayland_win_data_get(client->hwnd)))
      {
-         wayland_client_surface_attach(surface, NULL);
+         wayland_client_surface_attach(surface, NULL, NULL);
 +        if (data->client_surface == surface)
 +            wayland_client_surface_restore_owner(data, surface);
          wayland_client_surface_unregister(surface);
@@ -939,7 +914,9 @@ index a909cfb3d27..b0ac844d3c7 100644
          wayland_client_surface_update_owner(data);
          wayland_win_data_release(data);
      }
-@@ -4671,9 +4697,7 @@ static void wayland_client_surface_update(struct client_surface *client)
+     InterlockedExchange(&client->presentation_owner, FALSE);
+ }
+@@ -4984,9 +5010,7 @@ static void wayland_client_surface_update(struct client_surface *client)
  
      if (!(data = wayland_win_data_get(client->hwnd))) return;
  
@@ -950,15 +927,14 @@ index a909cfb3d27..b0ac844d3c7 100644
      wayland_client_surface_register(data, surface);
      wayland_client_surface_update_owner(data);
      wayland_win_data_release(data);
-@@ -4776,6 +4800,7 @@ static void wayland_client_surface_present(struct client_surface *client, HDC hd
- 
- void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
+@@ -5130,5 +5154,6 @@ void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
  {
+     HWND toplevel = NtUserGetAncestor(hwnd, GA_ROOT);
+     struct wayland_client_surface *old_client;
 +    struct wayland_client_surface *owner;
      struct wayland_win_data *data;
- 
-     /* ownership is shared with the callers, the last caller to release
-@@ -4783,9 +4808,64 @@ void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
+     BOOL visible;
+@@ -5138,9 +5163,64 @@ void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
  
      if (!(data = wayland_win_data_get(hwnd))) return;
  
@@ -1026,7 +1002,7 @@ index a909cfb3d27..b0ac844d3c7 100644
      wayland_win_data_release(data);
  }
  
-@@ -4794,6 +4874,9 @@ static const struct client_surface_funcs wayland_client_surface_funcs =
+@@ -5150,7 +5230,10 @@ static const struct client_surface_funcs wayland_client_surface_funcs =
      .destroy = wayland_client_surface_destroy,
      .detach = wayland_client_surface_detach,
      .update = wayland_client_surface_update,
@@ -1034,12 +1010,13 @@ index a909cfb3d27..b0ac844d3c7 100644
 +    .activate = wayland_client_surface_activate,
 +    .deactivate = wayland_client_surface_deactivate,
      .present = wayland_client_surface_present,
+     .set_color_space = wayland_client_surface_set_color_space,
  };
  
-@@ -4803,6 +4886,7 @@ struct wayland_client_surface *wayland_client_surface_create(HWND hwnd)
+@@ -5188,6 +5271,7 @@ struct client_surface *WAYLAND_CreateClientSurface(HWND hwnd, int pixel_format,
      struct wl_region *empty_region;
  
-     if (!(client = client_surface_create(sizeof(*client), &wayland_client_surface_funcs, hwnd))) return NULL;
+     if (!(client = client_surface_create(&wayland_client_surface_funcs, hwnd, pixel_format, raw))) return NULL;
 +    InterlockedExchange(&client->client.presentation_owner, FALSE);
      list_init(&client->hwnd_entry);
  
@@ -1048,7 +1025,7 @@ diff --git a/include/wine/gdi_driver.h b/include/wine/gdi_driver.h
 index 507a5be74ad..8139a3ee95a 100644
 --- a/include/wine/gdi_driver.h
 +++ b/include/wine/gdi_driver.h
-@@ -254,6 +254,12 @@ struct client_surface_funcs
+@@ -261,5 +261,11 @@ struct client_surface_funcs
      void (*detach)( struct client_surface *surface );
      /* update the surface to match its window state */
      void (*update)( struct client_surface *surface );
@@ -1060,8 +1037,7 @@ index 507a5be74ad..8139a3ee95a 100644
 +    void (*deactivate)( struct client_surface *surface );
      /* present the client surface if necessary, hdc != NULL when offscreen, called from render thread */
      void (*present)( struct client_surface *surface, HDC hdc );
- };
-@@ -264,7 +270,9 @@ struct client_surface
+@@ -270,8 +276,10 @@ struct client_surface
      struct list                        entry;          /* entry in win32u managed list */
      LONG                               ref;            /* reference count */
      LONG                               busy_ref;       /* count of drawables/swapchains referencing this surface */
@@ -1070,8 +1046,9 @@ index 507a5be74ad..8139a3ee95a 100644
 +    LONG                               native_pending_ref; /* host WSI presenters being created */
      LONG                               presentation_owner; /* selected renderer for the window */
      HWND                               hwnd;           /* window the surface was created for */
+     int                                format;         /* pixel format of the surface */
      LONG                               updated;        /* has been moved / resized / reparented */
-@@ -276,6 +284,10 @@ W32KAPI void *client_surface_create( UINT size, const struct client_surface_func
+@@ -290,5 +290,9 @@ W32KAPI void *client_surface_create( const struct client_surface_funcs *funcs, H
  W32KAPI void client_surface_add_ref( struct client_surface *surface );
  W32KAPI void client_surface_release( struct client_surface *surface );
  W32KAPI void client_surface_invalidate_presentation( struct client_surface *surface );
@@ -1080,7 +1057,6 @@ index 507a5be74ad..8139a3ee95a 100644
 +                                      struct client_surface **owner );
 +W32KAPI void client_surface_deactivate( struct client_surface *surface, BOOL native );
  W32KAPI void client_surface_present( struct client_surface *surface );
- W32KAPI void client_surface_update( struct client_surface *surface );
  W32KAPI void update_client_surfaces( HWND hwnd );
 -- 
 2.51.0

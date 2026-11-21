@@ -222,36 +222,38 @@ index 9ce23e0..760df7e 100644
              wl_subsurface_destroy(client->wl_subsurface);
              client->wl_subsurface = NULL;
              client->toplevel_wl_surface = NULL;
-@@ -4965,9 +4968,11 @@ void wayland_client_surface_attach(struct wayland_client_surface *client, HWND t
+@@ -5279,9 +5279,11 @@ void wayland_client_surface_attach(struct wayland_client_surface *client, HWND t
      wayland_surface_classify_child_visibility(surface, &dst, &visibility);
      wayland_surface_update_child_visibility(&dst, &visibility, &client->visual_constraint);
-
--    wayland_surface_reconfigure_client(surface, client, &client_rect, stack_above_parent);
+ 
+-    wayland_surface_reconfigure_client(surface, client, rect, stack_above_parent);
 -    /* Commit to apply subsurface positioning. */
 -    wl_surface_commit(surface->wl_surface);
 +    /* Subsurface position and stacking are double-buffered on the parent.
 +     * Avoid a no-op parent commit after every client present. */
-+    if (wayland_surface_reconfigure_client(surface, client, &client_rect,
++    if (wayland_surface_reconfigure_client(surface, client, rect,
 +                                           stack_above_parent))
 +        wl_surface_commit(surface->wl_surface);
-
+ 
      if (!toplevel_data->window_contents)
      {
 diff --git a/include/wine/gdi_driver.h b/include/wine/gdi_driver.h
 index 38aa5a0..0cbc6e8 100644
 --- a/include/wine/gdi_driver.h
 +++ b/include/wine/gdi_driver.h
-@@ -267,11 +267,13 @@ struct client_surface
-     HWND                               hwnd;           /* window the surface was created for */
+@@ -278,7 +278,8 @@ struct client_surface
      LONG                               updated;        /* has been moved / resized / reparented */
+     HWND                               toplevel;       /* toplevel window of the surface */
      LONG                               offscreen;      /* client window is offscreen */
 +    LONG                               presentation_generation; /* invalidates stale presentation waits */
+     RECT                               virtual_rect;   /* virtual size and position in the toplevel ancestor, relative to its visible rect */
+     RECT                               monitor_rect;   /* raw physical size and position in the toplevel ancestor, relative to its visible rect */
+     BOOL                               raw;            /* use the raw physical position and size for the host client surface */
  };
-
- W32KAPI void *client_surface_create( UINT size, const struct client_surface_funcs *funcs, HWND hwnd );
+@@ -287,5 +288,6 @@ struct client_surface
  W32KAPI void client_surface_add_ref( struct client_surface *surface );
  W32KAPI void client_surface_release( struct client_surface *surface );
 +W32KAPI void client_surface_invalidate_presentation( struct client_surface *surface );
  W32KAPI void client_surface_present( struct client_surface *surface );
- W32KAPI void client_surface_update( struct client_surface *surface );
  W32KAPI void update_client_surfaces( HWND hwnd );
+ W32KAPI void detach_client_surfaces( HWND hwnd );

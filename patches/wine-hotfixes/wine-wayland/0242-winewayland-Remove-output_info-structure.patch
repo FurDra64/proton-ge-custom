@@ -195,7 +195,7 @@ index de29e04c102..f52b4ed71f4 100644
                  count++;
              }
          }
-@@ -185,61 +190,67 @@ static void output_info_array_zero_primary(struct wl_array *output_info_array)
+@@ -185,62 +190,68 @@ static void output_info_array_zero_primary(struct wl_array *output_info_array)
          {
              ERR("Could not find output %s\n", debugstr_a(env));
          }
@@ -245,7 +245,7 @@ index de29e04c102..f52b4ed71f4 100644
      }
  }
  
--static void output_info_array_arrange_physical_coords(struct wl_array *output_info_array)
+-void output_info_array_arrange_physical_coords(struct wl_array *output_info_array)
 +void wayland_output_array_arrange_physical_coords(void)
  {
 -    struct output_info *info;
@@ -284,7 +284,8 @@ index de29e04c102..f52b4ed71f4 100644
 +          wayland_output_cmp_primary_x_y);
  }
  
- static void wayland_add_device_gpu(const struct gdi_device_manager *device_manager,
+ static int scale_output_coordinate(int offset, int physical_size, int logical_size)
+ {
 @@ -253,12 +264,12 @@ static void wayland_add_device_gpu(const struct gdi_device_manager *device_manag
  }
  
@@ -425,19 +426,14 @@ index de29e04c102..f52b4ed71f4 100644
                        struct wayland_output_mode, entry)
      {
          DEVMODEW mode = {.dmSize = sizeof(mode)};
-@@ -484,50 +495,28 @@ static void wayland_add_device_modes(const struct gdi_device_manager *device_man
+@@ -592,102 +603,32 @@ static void wayland_add_device_modes(const struct gdi_device_manager *device_man
      free(modes);
  }
  
--void output_info_array_update(void)
+-static void output_info_array_init(struct wl_array *output_info_array)
 -{
 -    struct output_info *output_info;
 -    struct wayland_output *output;
--    struct wl_array *output_info_array = &process_wayland.output_info_array;
--
--    /* reset the output info array */
--    wl_array_release(&process_wayland.output_info_array);
--    wl_array_init(&process_wayland.output_info_array);
 -
 -    wl_list_for_each(output, &process_wayland.output_list, link)
 -    {
@@ -450,6 +446,55 @@ index de29e04c102..f52b4ed71f4 100644
 -    output_info_array_arrange_physical_coords(output_info_array);
 -}
 -
+-/* Locking is done externally to ensure wl_output remains valid */
+-struct wayland_output *wayland_output_for_rect(const RECT *window_rect)
+-{
+-    struct wayland_output *best = NULL;
+-    struct wl_array output_info_array;
+-    struct output_info *output_info;
+-    HMONITOR target = NtUserMonitorFromRect(window_rect, 0);
+-
+-    TRACE("window %s\n", wine_dbgstr_rect(window_rect));
+-
+-    if (!target) return NULL;
+-
+-    /* Setup monitor positions */
+-    wl_array_init(&output_info_array);
+-    output_info_array_init(&output_info_array);
+-
+-    wl_array_for_each(output_info, &output_info_array)
+-    {
+-        RECT rect;
+-        SetRect(&rect, 0, 0,
+-                output_info->output->current_mode->width,
+-                output_info->output->current_mode->height);
+-        OffsetRect(&rect, output_info->x, output_info->y);
+-
+-        TRACE("output %s: %s\n",
+-              debugstr_a(output_info->output->name),
+-              wine_dbgstr_rect(&rect));
+-
+-        if (NtUserMonitorFromRect(&rect, 0) == target)
+-        {
+-            best = CONTAINING_RECORD(output_info->output,
+-                                     struct wayland_output,
+-                                     current);
+-            break;
+-        }
+-    }
+-
+-    wl_array_release(&output_info_array);
+-
+-    if (!best)
+-    {
+-        WARN("Could not find associated wayland output for rect %s!\n",
+-             wine_dbgstr_rect(window_rect));
+-        return NULL;
+-    }
+-
+-    return best;
+-}
+-
  /***********************************************************************
   *      UpdateDisplayDevices (WAYLAND.@)
   */
@@ -457,32 +502,40 @@ index de29e04c102..f52b4ed71f4 100644
  {
      DWORD state_flags = DISPLAY_DEVICE_ATTACHED_TO_DESKTOP | DISPLAY_DEVICE_PRIMARY_DEVICE;
 -    struct output_info *primary = NULL, *output_info;
+-    struct wl_array output_info_array;
 +    struct wayland_output *primary = NULL, **pos;
  
      TRACE("\n");
  
      pthread_mutex_lock(&process_wayland.output_mutex);
  
--    output_info_array_update();
+-    wl_array_init(&output_info_array);
+-    output_info_array_init(&output_info_array);
 -
      /* Populate GDI devices. */
      wayland_add_device_gpu(device_manager, param);
  
--    wl_array_for_each(output_info, &process_wayland.output_info_array)
+-    wl_array_for_each(output_info, &output_info_array)
 +    wl_array_for_each(pos, &process_wayland.output_array)
      {
--        if (!primary) primary = output_info;
--        wayland_add_device_source(device_manager, param, state_flags, output_info);
--        wayland_add_device_monitor(device_manager, param, output_info, primary);
--        wayland_add_device_modes(device_manager, param, output_info, primary);
 +        if (!(*pos)->current.current_mode) continue;
 +        if (!primary) primary = *pos;
 +        wayland_add_device_source(device_manager, param, state_flags, &(*pos)->current);
 +        wayland_add_device_monitor(device_manager, param, &(*pos)->current, &primary->current);
 +        wayland_add_device_modes(device_manager, param, &(*pos)->current, &primary->current);
+-        if (!primary) primary = output_info;
+-        wayland_add_device_source(device_manager, param, state_flags, output_info);
+-        wayland_add_device_monitor(device_manager, param, output_info, primary);
+-        wayland_add_device_modes(device_manager, param, output_info, primary);
          state_flags &= ~DISPLAY_DEVICE_PRIMARY_DEVICE;
      }
  
+-    wl_array_release(&output_info_array);
+-
+     pthread_mutex_unlock(&process_wayland.output_mutex);
+ 
+     return STATUS_SUCCESS;
+ }
 diff --git a/dlls/winewayland.drv/wayland.c b/dlls/winewayland.drv/wayland.c
 index 8295de6a669..28829b7150d 100644
 --- a/dlls/winewayland.drv/wayland.c
@@ -672,8 +725,8 @@ index 87e4ad19851..26846b36644 100644
 -				 int32_t g_x, int32_t g_y,
 -				 int32_t b_x, int32_t b_y,
 -				 int32_t w_x, int32_t w_y)
-+                               	            struct wp_image_description_info_v1 *info,
-+                                   	        int32_t r_x, int32_t r_y, int32_t g_x,
++				            struct wp_image_description_info_v1 *info,
++					        int32_t r_x, int32_t r_y, int32_t g_x,
 +                                            int32_t g_y, int32_t b_x, int32_t b_y,
 +                                            int32_t w_x, int32_t w_y)
  {
@@ -818,10 +871,13 @@ diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv
 index 9f7501723bd..9733b2877ed 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
-@@ -264,9 +264,8 @@ struct wayland
+@@ -269,12 +269,11 @@ struct wayland
      struct wayland_touch touch;
      struct wayland_text_input text_input;
      struct wayland_data_device data_device;
+ #ifdef WL_FIXES_ACK_GLOBAL_REMOVE
+     struct wl_fixes *wl_fixes;
+ #endif
 -    struct wl_list output_list;
 -    struct wl_array output_info_array;
 -    /* Protects the output_list, output_info_array, and the wayland_output.current states. */
@@ -857,7 +913,7 @@ index 9f7501723bd..9733b2877ed 100644
  struct wayland_surface_config
  {
      RECT rect;
-@@ -436,12 +430,11 @@ BOOL wayland_process_init(void);
+@@ -436,10 +430,9 @@ BOOL wayland_process_init(void);
  void wayland_output_add_ref(struct wayland_output *output);
  BOOL wayland_output_create(uint32_t id, uint32_t version);
  void wayland_output_release(struct wayland_output *output);
@@ -870,8 +926,6 @@ index 9f7501723bd..9733b2877ed 100644
 -void wayland_color_manager_init(void);
 +void wayland_output_array_arrange_physical_coords(void);
  
- /**********************************************************************
-  *          Wayland surface
 -- 
 2.55.0
 

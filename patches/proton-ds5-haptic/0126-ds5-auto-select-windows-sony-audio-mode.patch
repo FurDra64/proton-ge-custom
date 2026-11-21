@@ -36,7 +36,7 @@ Manual environment overrides remain available for diagnostics.
 
 --- a/dlls/mmdevapi/devenum.c
 +++ b/dlls/mmdevapi/devenum.c
-@@ -794,11 +794,31 @@
+@@ -624,11 +624,31 @@
      return env && env[0] == '1' && !env[1];
  }
  
@@ -69,7 +69,7 @@ Manual environment overrides remain available for diagnostics.
  }
  
  static BOOL is_dualsense_mono_endpoint_name(const WCHAR *name)
-@@ -2029,6 +2049,58 @@
+@@ -1895,6 +1895,58 @@
      return CONTAINING_RECORD(iface, MMDevice, IMMDevice_iface);
  }
  
@@ -130,25 +130,30 @@ Manual environment overrides remain available for diagnostics.
      return !should_hide_from_endpoint_collection(impl_from_IMMDevice(iface));
 --- a/dlls/mmdevapi/client.c
 +++ b/dlls/mmdevapi/client.c
-@@ -902,6 +902,7 @@
+@@ -820,7 +820,8 @@
      struct audio_client *This = impl_from_IAudioClient3(iface);
      struct is_format_supported_params params;
+     BOOL compatible;
      BOOL fake_exclusive = FALSE;
 +    BOOL sony_windows_audio_mode;
      HRESULT hr;
  
      TRACE("(%p)->(%x, %p, %p)\n", This, mode, fmt, out);
-@@ -914,6 +915,9 @@
+@@ -833,9 +833,12 @@
  
      dump_fmt(fmt);
  
 +    sony_windows_audio_mode = auto_select_sony_audio_mode(This->parent, mode, fmt,
 +            &This->sony_format_probe_count);
 +
+     if (mode != AUDCLNT_SHAREMODE_SHARED && mode != AUDCLNT_SHAREMODE_EXCLUSIVE)
+         return E_INVALIDARG;
+ 
      if (mode == AUDCLNT_SHAREMODE_EXCLUSIVE && device_fake_exclusive()) {
          mode = AUDCLNT_SHAREMODE_SHARED;
          fake_exclusive = TRUE;
-@@ -929,6 +933,7 @@
+@@ -866,7 +866,8 @@
+         params.device  = This->device_name;
          params.flow    = This->dataflow;
          params.share   = mode;
          params.fmt_in  = fmt;
@@ -158,7 +163,7 @@ Manual environment overrides remain available for diagnostics.
  
 --- a/dlls/mmdevapi/mmdevapi_private.h
 +++ b/dlls/mmdevapi/mmdevapi_private.h
-@@ -82,6 +82,7 @@
+@@ -80,6 +80,7 @@
  
      struct list entry;
      char *device_name;
@@ -166,18 +171,17 @@ Manual environment overrides remain available for diagnostics.
  };
  
  extern HRESULT MMDevEnum_Create(REFIID riid, void **ppv);
-@@ -131,6 +132,8 @@
+@@ -129,5 +129,7 @@
  extern BOOL get_device_name_from_guid( const GUID *guid, char **name, EDataFlow *flow );
  extern HRESULT load_devices_from_reg(void);
  extern HRESULT load_driver_devices(EDataFlow flow);
 +extern BOOL auto_select_sony_audio_mode(IMMDevice *device, AUDCLNT_SHAREMODE mode,
 +        const WAVEFORMATEX *format, unsigned int *probe_count);
  
- extern void main_loop_stop(void);
  extern void stop_update_thread(void);
 --- a/dlls/mmdevapi/unixlib.h
 +++ b/dlls/mmdevapi/unixlib.h
-@@ -146,6 +146,7 @@
+@@ -154,6 +154,7 @@
      AUDCLNT_SHAREMODE share;
      const WAVEFORMATEX *fmt_in;
      HRESULT result;
@@ -187,15 +191,16 @@ Manual environment overrides remain available for diagnostics.
  struct get_loopback_capture_device_params
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -183,6 +183,7 @@
+@@ -179,7 +179,8 @@
  static pthread_cond_t g_phys_cond = PTHREAD_COND_INITIALIZER;
  static unsigned int g_haptic_hotplug_generation;
  static unsigned int g_dualsense_endpoint_generation;
 +static LONG g_sony_windows_audio_mode;
+ static unsigned int g_dualsense_mono_hotplug_generation;
  static unsigned int g_dualsense_mono_speaker_add_generation;
  static char *g_dualsense_mono_preferred_sink;
  static unsigned int g_phys_event_mask;
-@@ -1321,14 +1322,16 @@
+@@ -1584,14 +1584,16 @@
  {
      const char *env = getenv("PROTON_SONY_WINDOWS_DEVICE_NAMES");
  
@@ -214,7 +219,7 @@ Manual environment overrides remain available for diagnostics.
  }
  
  static char *make_pipewire_dualsense_haptic_path(const char *target)
-@@ -4656,6 +4659,10 @@
+@@ -4792,6 +4792,10 @@
  {
      struct is_format_supported_params *params = args;
  
@@ -225,15 +230,16 @@ Manual environment overrides remain available for diagnostics.
      /* This driver does not support exclusive mode. */
      if (params->share == AUDCLNT_SHAREMODE_EXCLUSIVE) {
          WARN("Exclusive mode requested but winepulse.drv does not support exclusive mode.\n");
-@@ -4765,6 +4772,7 @@
-         if (!pulse_device_matches(dev, params->device))
+@@ -4896,7 +4896,8 @@
+     LIST_FOR_EACH_ENTRY(dev, list, PhysDevice, entry) {
+         if (strcmp(params->device, dev->pulse_name))
              continue;
  
 +        apply_windows_sony_audio_format(dev);
          *params->fmt = dev->fmt;
          g_phys_unlock();
          params->result = S_OK;
-@@ -5333,6 +5341,7 @@
+@@ -5460,6 +5460,7 @@
          AUDCLNT_SHAREMODE share;
          PTR32 fmt_in;
          HRESULT result;
@@ -241,7 +247,7 @@ Manual environment overrides remain available for diagnostics.
      } *params32 = args;
      struct is_format_supported_params params =
      {
-@@ -5340,6 +5349,7 @@
+@@ -5467,6 +5467,7 @@
          .flow = params32->flow,
          .share = params32->share,
          .fmt_in = ULongToPtr(params32->fmt_in),
@@ -251,7 +257,7 @@ Manual environment overrides remain available for diagnostics.
      params32->result = params.result;
 --- a/dlls/sechost/service.c
 +++ b/dlls/sechost/service.c
-@@ -2141,8 +2141,17 @@
+@@ -2145,8 +2145,17 @@
  static BOOL use_sony_usb_parent_container_fallback(void)
  {
      const char *env = getenv("PROTON_KEEP_SONY_AUDIO_ENDPOINT_VISIBLE");
@@ -272,7 +278,7 @@ Manual environment overrides remain available for diagnostics.
  static const GUID null_guid;
 --- a/dlls/winebus.sys/main.c
 +++ b/dlls/winebus.sys/main.c
-@@ -298,11 +298,6 @@
+@@ -352,11 +352,6 @@
  static BOOL use_windows_sony_controller_names(void)
  {
 -    static const WCHAR name[] = L"PROTON_SONY_WINDOWS_DEVICE_NAMES";

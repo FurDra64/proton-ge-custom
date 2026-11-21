@@ -14,7 +14,7 @@ paths while PROTON_NO_STEAMINPUT=1. This leaves the registry intact so the
 device remains available when Steam Input is enabled again.
 ---
  dlls/cfgmgr32/cfgmgr32.c | 20 ++++++++++++++++++++
- dlls/setupapi/devinst.c  | 18 +++++++++++++++++-
+ dlls/setupapi/devinst.c  | 20 ++++++++++++++++++++--
  2 files changed, 37 insertions(+), 1 deletion(-)
 
 diff --git a/dlls/cfgmgr32/cfgmgr32.c b/dlls/cfgmgr32/cfgmgr32.c
@@ -91,23 +91,27 @@ index b860d72b16f..0c660798ed7 100644
  struct driver
  {
      DWORD rank;
-@@ -2013,7 +2028,8 @@ static void SETUPDI_EnumerateMatchingInterfaces(HDEVINFO DeviceInfoSet,
-                 if (!l && dataType == REG_SZ)
-                 {
-                     TRACE("found instance ID %s\n", debugstr_w(deviceInst));
--                    if (!enumstr || !lstrcmpiW(enumstr, deviceInst))
-+                    if (!is_disabled_steam_input_device(deviceInst) &&
-+                            (!enumstr || !lstrcmpiW(enumstr, deviceInst)))
-                     {
-                         HKEY deviceKey;
+@@ -2110,8 +2124,9 @@ static void SETUPDI_EnumerateMatchingInterfaces(struct DeviceInfoSet *set, const
+         for (tmp = wcschr(buf, '#'); tmp; tmp = wcschr(tmp + 1, '#'))
+             *tmp = '\\';
  
-@@ -2252,6 +2268,7 @@ static void SETUPDI_EnumerateMatchingDeviceInstances(struct DeviceInfoSet *set,
+-        if (enum_str && wcsicmp(enum_str, buf))
+-            continue;
++        if (is_disabled_steam_input_device(buf) ||
++            (enum_str && wcsicmp(enum_str, buf)))
++            continue;
  
-                             if (swprintf(id, ARRAY_SIZE(id), fmt, enumerator,
-                                         deviceName, deviceInstance) != -1 &&
-+                                    !is_disabled_steam_input_device(id) &&
-                                     (!(flags & DIGCF_PRESENT) ||
-                                      is_device_instance_linked(subKey, interfacesKey, id)))
-                             {
+         /* Query for "Phantom" value first. */
+         size = sizeof(phantom);
+@@ -2197,6 +2212,9 @@ static void SETUPDI_EnumerateDevices(HDEVINFO DeviceInfoSet, const GUID *class,
+             if (wcsicmp(enum_str2, tmp)) continue;
+         }
+ 
++        if (is_disabled_steam_input_device(id))
++            continue;
++
+         /* SetupDiGetClassDevs() doesn't return phantom devices. */
+         size = sizeof(phantom);
+         if (!RegGetValueW(enum_key, id, L"Phantom", RRF_RT_REG_DWORD, NULL, &phantom, &size) && phantom)
 -- 
 2.55.0

@@ -39,7 +39,7 @@ index eece404..7eada11 100644
  void set_visible_region( HDC hdc, HRGN hrgn, const RECT *vis_rect, const RECT *device_rect,
 -                         struct window_surface *surface, BOOL gdi_over_source,
 +                         struct window_surface *surface, enum surface_gdi_source source,
-                          UINT dpi_from, UINT dpi_to )
+                          struct ratio dpi_from, struct ratio dpi_to )
  {
      DC * dc;
 @@ -236,7 +236,7 @@ void set_visible_region( HDC hdc, HRGN hrgn, const RECT *vis_rect, const RECT *d
@@ -217,7 +217,7 @@ index 56022d3..caf0895 100644
  extern void set_visible_region( HDC hdc, HRGN hrgn, const RECT *vis_rect, const RECT *device_rect,
 -                                struct window_surface *surface, BOOL gdi_over_source,
 +                                struct window_surface *surface, enum surface_gdi_source source,
-                                 UINT dpi_from, UINT dpi_to );
+                                 struct ratio dpi_from, struct ratio dpi_to );
  extern void update_dc_clipping( DC * dc );
  
 @@ -226,7 +233,9 @@ extern UINT get_dib_dc_color_table( HDC hdc, UINT startpos, UINT entries,

@@ -23,7 +23,11 @@ diff --git a/dlls/mmdevapi/devenum.c b/dlls/mmdevapi/devenum.c
 index 429043ec3d6..3b253c688e5 100644
 --- a/dlls/mmdevapi/devenum.c
 +++ b/dlls/mmdevapi/devenum.c
-@@ -723,15 +723,6 @@ static BOOL is_dualsense_device_path(const WCHAR *device_path)
+@@ -548,19 +548,10 @@ static BOOL is_dualsense_device_path(const WCHAR *device_path)
+ {
+     return device_path && (wcsstr(device_path, L"VID_054C&PID_05C4") ||
+             wcsstr(device_path, L"VID_054C&PID_09CC") ||
+             wcsstr(device_path, L"VID_054C&PID_0CE6") ||
              wcsstr(device_path, L"VID_054C&PID_0DF2"));
  }
  

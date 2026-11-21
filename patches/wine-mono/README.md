@@ -378,7 +378,8 @@ This is missing Wine environment data, not a further Mono runtime bug.
 generic boot-time initialization with `UuidCreate`, following Microsoft's
 [documented SQM registry behavior](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-sqmcs2/0442f736-8670-4ae4-8651-5732f3ba18dd).
 It preserves an existing value and neither opts into telemetry nor starts
-any telemetry service. The pending patch is explicitly applied by
+any telemetry service. That pending patch is retired: upstream
+`ab389d26edb` creates the key at boot, so it is no longer applied by
 `protonprep-valve-staging.sh`. `default_pfx.py` strips only the template's
 SQM `MachineId`, so new prefixes get separate IDs instead of inheriting
 one shared build-machine value. User prefixes are not filtered.

@@ -21,9 +21,9 @@ diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayla
 index 69cc5ee9553..178458a1367 100644
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
-@@ -40,6 +40,20 @@
- 
- WINE_DEFAULT_DEBUG_CHANNEL(waylanddrv);
+@@ -232,6 +232,20 @@ static void update_window_state(HWND hwnd)
+     NtUserSetRawWindowPos(hwnd, rect, swp_flags, FALSE);
+ }
  
 +static void request_window_surface_expose(HWND hwnd, BOOL allow_inline)
 +{
@@ -39,35 +39,35 @@ index 69cc5ee9553..178458a1367 100644
 +    NtUserPostMessage(hwnd, WM_WAYLAND_EXPOSE, 0, 0);
 +}
 +
- struct wayland_hwnd_dmabuf_surface;
- 
- struct wayland_hwnd_dmabuf_buffer
-@@ -279,7 +293,7 @@ static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg_
+ static struct wp_image_description_v1 *scrgb_desc;
+ static struct wp_image_description_v1 *bt2100_desc;
+ static BOOL color_manager_initialized;
+@@ -433,7 +433,7 @@ static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg_
  
      /* Flush the window surface in case there is content that we weren't
       * able to flush before due to the lack of the initial configure. */
--    if (should_expose) NtUserExposeWindowSurface(hwnd, 0, NULL, 0);
+-    if (should_expose) NtUserExposeWindowSurface(hwnd, 0, NULL);
 +    if (should_expose) request_window_surface_expose(hwnd, TRUE);
  }
  
  static const struct xdg_surface_listener xdg_surface_listener =
-@@ -435,7 +449,7 @@ static void zwlr_layer_surface_v1_handle_configure(void *private,
+@@ -590,7 +590,7 @@ static void zwlr_layer_surface_v1_handle_configure(void *private,
      }
  
      wayland_win_data_release(data);
--    NtUserExposeWindowSurface(hwnd, 0, NULL, 0);
+-    NtUserExposeWindowSurface(hwnd, 0, NULL);
 +    request_window_surface_expose(hwnd, FALSE);
  }
  
  static void zwlr_layer_surface_v1_handle_closed(void *private,
-@@ -476,8 +490,8 @@ void wp_fractional_scale_handle_scale(void* user_data,
- 
+@@ -923,8 +937,8 @@ void wp_fractional_scale_handle_scale(void* user_data,
+
      wayland_win_data_release(data);
  
--    NtUserExposeWindowSurface(hwnd, 0, NULL, 0);
+-    NtUserExposeWindowSurface(hwnd, 0, NULL);
 -    NtUserPostMessage(hwnd, WM_WINE_UPDATEWINDOWSTATE, 0, 0);
 +    request_window_surface_expose(hwnd, FALSE);
-+    update_window_state(hwnd);
++    NtUserPostMessage(hwnd, WM_WINE_UPDATEWINDOWSTATE, 0, 0);
  }
  
  static const struct wp_fractional_scale_v1_listener wp_fractional_scale_listener =

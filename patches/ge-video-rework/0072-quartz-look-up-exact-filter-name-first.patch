@@ -28,7 +28,7 @@ lookup after removing the reader. The production change is unchanged.
 diff --git a/dlls/quartz/filtergraph.c b/dlls/quartz/filtergraph.c
 --- a/dlls/quartz/filtergraph.c
 +++ b/dlls/quartz/filtergraph.c
-@@ -549,17 +549,10 @@
+@@ -549,19 +549,39 @@
      return IUnknown_Release(graph->outer_unk);
  }
  
@@ -37,17 +37,12 @@ diff --git a/dlls/quartz/filtergraph.c b/dlls/quartz/filtergraph.c
  {
      struct filter *filter;
  
--    /* King of Fighters XIII requests the WMV decoder filter by name to
--     * connect it to a Sample Grabber filter, return our custom decoder
--     * filter instance instead.
--     */
--    if (!wcscmp(name, L"WMVideo Decoder DMO"))
--        name = L"Reader";
--
      LIST_FOR_EACH_ENTRY(filter, &graph->filters, struct filter, entry)
      {
          if (!wcscmp(filter->name, name))
-@@ -569,6 +562,26 @@
+             return filter->filter;
+     }
+ 
      return NULL;
  }
  
@@ -74,7 +69,7 @@ diff --git a/dlls/quartz/filtergraph.c b/dlls/quartz/filtergraph.c
  static BOOL has_output_pins(IBaseFilter *filter)
  {
      IEnumPins *enumpins;
-@@ -670,7 +683,7 @@
+@@ -662,7 +682,7 @@
          return E_OUTOFMEMORY;
      }
  
@@ -83,7 +78,7 @@ diff --git a/dlls/quartz/filtergraph.c b/dlls/quartz/filtergraph.c
          duplicate_name = TRUE;
  
      if (!name || duplicate_name)
-@@ -684,7 +697,7 @@
+@@ -676,7 +696,7 @@
  
              graph->name_index = (graph->name_index + 1) % 10000;
  

@@ -1,44 +1,128 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: GE-Proton <git@localhost>
-Date: Thu, 9 Jul 2026 15:05:00 -0600
-Subject: [PATCH] winepulse: Use a stable DualSense mono speaker endpoint id.
+Date: Mon, 6 Jul 2026 14:57:00 -0600
+Subject: [PATCH] winepulse: Lock specific DualSense mono targets by stable endpoint
+ id
 
-Spider-Man Remastered keeps a controller speaker endpoint cached across
-controller changes. The physical Pulse sink names differ between the standard
-DualSense and DualSense Edge controllers, so using the raw Pulse sink name as
-the Wine endpoint id strands the cached app-side endpoint after a model swap.
+Games that open the controller speaker through the shared mono endpoint
+must keep working when more than one DualSense is connected. Record a
+stable endpoint id on every physical device so the known mono sink can
+be pinned while the generic capture/playback endpoints keep following
+whatever PulseAudio advertises.
 
-Expose the controller mono speaker with the same app-facing endpoint id used by
-the standard DualSense Pulse sink while still routing streams to the currently
-connected physical DualSense speaker sink in winepulse. Unplug still removes
-the old physical device; the next plug creates a new physical Pulse sink, but
-the app-facing controller speaker identity stays stable enough for cached
-effect-output clients to resolve to the new device.
+Folded-in foundation (0039 is classified OBSOLETE by the prep harness
+but its endpoint-id mechanism is absent from the valve-audio tree, so
+this first consumer carries it): PhysDevice.endpoint_id field,
+g_dualsense_endpoint_generation counter, pulse_endpoint_id /
+pulse_device_matches helpers, pulse_set_endpoint_id constructor, plus
+init-NULL in pulse_add_device, free in pulse_dev_free, and the
+set-call after the pulse_name copy. No live mono-reconnect code is
+removed; the valve-audio period framework stays untouched.
 ---
- dlls/winepulse.drv/pulse.c | 6 ++++++
- 1 file changed, 6 insertions(+)
+ dlls/winepulse.drv/pulse.c | 48 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 48 insertions(+)
 
 diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
-index 22222222222..33333333333 100644
+index 66666666666..77777777777 100644
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -1251,11 +1251,17 @@ static BOOL pulse_stream_dualsense_mono_format(const struct pulse_stream *stream
+@@ -155,6 +155,7 @@ typedef struct _PhysDevice {
+     WAVEFORMATEXTENSIBLE fmt;
+     char *raw_haptic_target;
+     char *raw_haptic_alsa_path;
++    char *endpoint_id;
+     GUID container_id;
+     char pulse_name[0];
+ } PhysDevice;
+@@ -179,6 +180,7 @@ static pthread_mutex_t g_phys_mutex;
+ static pthread_cond_t g_phys_cond = PTHREAD_COND_INITIALIZER;
+ static unsigned int g_haptic_hotplug_generation;
+ static unsigned int g_dualsense_mono_hotplug_generation;
++static unsigned int g_dualsense_endpoint_generation;
+ static unsigned int g_dualsense_mono_speaker_add_generation;
+ static unsigned int g_phys_event_mask;
+ static unsigned int g_phys_event_stale_render;
+@@ -278,7 +280,18 @@ static HRESULT pulse_dualsense_pulse_haptic_reconnect(struct pulse_stream *strea
+ static void pulse_reconnect_dualsense_mono_streams(struct pulse_period *current_period);
+ static void pulse_reconnect_dualsense_pulse_haptic_streams(struct pulse_period *current_period);
+ static void convert_channel_map(const pa_channel_map *pa_map, WAVEFORMATEXTENSIBLE *fmt);
++
++static const char *pulse_endpoint_id(const PhysDevice *dev)
++{
++    return dev->endpoint_id ? dev->endpoint_id : dev->pulse_name;
++}
++
++static BOOL pulse_device_matches(const PhysDevice *dev, const char *device)
++{
++    return !strcmp(pulse_endpoint_id(dev), device) || !strcmp(dev->pulse_name, device);
++}
++
+ 
+ static BOOL pulse_stream_ready(struct pulse_stream *stream)
+ {
+     if (!stream->stream)
+@@ -461,6 +473,7 @@ static void pulse_free_phys_device(PhysDevice *dev)
+     free(dev->name);
+     free(dev->raw_haptic_target);
+     free(dev->raw_haptic_alsa_path);
++    free(dev->endpoint_id);
+     free(dev);
+ }
+
+@@ -1467,6 +1480,30 @@ static BOOL pulse_stream_dualsense_mono_format(const struct pulse_stream *strea
      return stream->dataflow == eRender && stream->ss.channels == 1;
  }
- 
+
 +#define DUALSENSE_MONO_ENDPOINT_ID \
 +    "alsa_output.usb-Sony_Interactive_Entertainment_Wireless_Controller-00.Default__Speaker__sink"
 +
- static BOOL pulse_set_endpoint_id(PhysDevice *dev)
- {
-     unsigned int generation;
-     size_t len;
- 
++static BOOL pulse_set_endpoint_id(PhysDevice *dev)
++{
++    unsigned int generation;
++    size_t len;
++
 +    if (is_dualsense_speaker_sink(dev))
 +        return !!(dev->endpoint_id = strdup(DUALSENSE_MONO_ENDPOINT_ID));
 +
-     if (!is_dualsense_audio_device(dev) || (dev->flow == eRender && !dev->raw_haptic_target
-             && strstr(dev->pulse_name, "Speaker__sink")))
-         return !!(dev->endpoint_id = strdup(dev->pulse_name));
--- 
++    if (!is_dualsense_audio_device(dev) || (dev->flow == eRender && !dev->raw_haptic_target
++            && strstr(dev->pulse_name, "Speaker__sink")))
++        return !!(dev->endpoint_id = strdup(dev->pulse_name));
++
++    generation = ++g_dualsense_endpoint_generation;
++    len = strlen(dev->pulse_name) + sizeof("#wine-dualsense-hotplug-") + 10;
++    if (!(dev->endpoint_id = malloc(len)))
++        return FALSE;
++
++    snprintf(dev->endpoint_id, len, "%s#wine-dualsense-hotplug-%u", dev->pulse_name, generation);
++    return TRUE;
++}
++
+ static BOOL pulse_stream_dualsense_mono(const struct pulse_stream *stream)
+ {
+     return pulse_stream_dualsense_mono_format(stream) && string_contains_dualsense_name(stream->device);
+@@ -1511,6 +1548,7 @@ static void pulse_add_device(struct list *list, const char *pulse_name, pa_prop
+     dev->min_period = 0;
+     dev->raw_haptic_target = NULL;
+     dev->raw_haptic_alsa_path = NULL;
++    dev->endpoint_id = NULL;
+     dev->ready = TRUE;
+     dev->length = 0;
+     dev->probe_status = -1;
+@@ -1552,6 +1590,15 @@ static void pulse_add_device(struct list *list, const char *pulse_name, pa_prop
+     }
+     memcpy(dev->pulse_name, pulse_name, len + 1);
+
++    if (!pulse_set_endpoint_id(dev))
++    {
++        free(dev->name);
++        free(dev->raw_haptic_target);
++        free(dev->raw_haptic_alsa_path);
++        free(dev);
++        return;
++    }
++
+     list_add_tail(list, &dev->entry);
+
+     TRACE("%s\n", debugstr_w(dev->name));
+--
 2.54.0

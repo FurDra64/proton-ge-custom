@@ -30,6 +30,9 @@ This does not force unmanaged windows, change D3D9 scaling, or add a game
 name check. The notification gap is verified; whether this alone replaces
 Aion's successful unmanaged-window test needs runtime validation. Preserve
 0042's Wayland size limits and 0043's X11 message-queue polling fix.
+Port: retarget onto the tree after upstream's NtUserCallHwndParam_* growth
+(GetPrivateData/SetPrivateData) and win32u/window.c drift; anchor the new
+enum entry and the send helper after SetPrivateData/SetRawWindowPos.
 
 ---
  dlls/win32u/window.c              | 45 +++++++++++++++++++++++++++++++++++++++
@@ -41,10 +44,10 @@ Aion's successful unmanaged-window test needs runtime validation. Preserve
  6 files changed, 112 insertions(+), 4 deletions(-)
 
 diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
-index 1b380067c68f2b4bf2bde9d427b8c1ac81410f2c..988d93e0745c8c67760007b269cf8ff41922647a 100644
+index c484d0f..5db46a7 100644
 --- a/dlls/win32u/window.c
 +++ b/dlls/win32u/window.c
-@@ -6503,6 +6503,45 @@ static BOOL set_dialog_info( HWND hwnd, void *info )
+@@ -6751,6 +6751,45 @@ static BOOL set_dialog_info( HWND hwnd, void *info )
      return TRUE;
  }
  
@@ -90,8 +93,8 @@ index 1b380067c68f2b4bf2bde9d427b8c1ac81410f2c..988d93e0745c8c67760007b269cf8ff4
  static BOOL set_raw_window_pos( HWND hwnd, RECT rect, UINT flags, BOOL internal )
  {
      TRACE( "hwnd %p, rect %s, flags %#x, internal %u\n", hwnd, wine_dbgstr_rect(&rect), flags, internal );
-@@ -6726,6 +6765,12 @@ ULONG_PTR WINAPI NtUserCallHwndParam( HWND hwnd, DWORD_PTR param, DWORD code )
-         return set_raw_window_pos( hwnd, params->rect, params->flags, params->internal );
+@@ -6988,6 +7027,12 @@ ULONG_PTR WINAPI NtUserCallHwndParam( HWND hwnd, DWORD_PTR param, DWORD code )
+         return set_window_long_internal( hwnd, params->offset, params->size, params->value, FALSE, TRUE );
      }
  
 +    case NtUserCallHwndParam_SendSizingMessage:
@@ -104,10 +107,10 @@ index 1b380067c68f2b4bf2bde9d427b8c1ac81410f2c..988d93e0745c8c67760007b269cf8ff4
          FIXME( "invalid code %u\n", code );
          return 0;
 diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
-index d3e4cd05ceaf0402bb2bdf84bf4bc31d0a5bed7e..7a41961eda40fe176ff7c5193935821ea1a520ad 100644
+index 807da8a..8d43929 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
-@@ -532,6 +532,7 @@ struct wayland_surface
+@@ -541,6 +541,7 @@ struct wayland_surface
      struct wayland_surface_config pending, requested, processing, current;
      struct wayland_toplevel_size_limits toplevel_size_limits;
      BOOL resizing;
@@ -116,10 +119,10 @@ index d3e4cd05ceaf0402bb2bdf84bf4bc31d0a5bed7e..7a41961eda40fe176ff7c5193935821e
       * The opengl implementation is already merged. Then we would only need to ensure contents via expose. */
      enum wayland_surface_ensure_type ensured_contents;
 diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
-index dc155e366ee382d544b7abf58aac68542bcc0d38..bea51157bcc7806ee656d4d9d6e86d639c12e8e3 100644
+index 66157db..73c41d1 100644
 --- a/dlls/winewayland.drv/window.c
 +++ b/dlls/winewayland.drv/window.c
-@@ -1044,6 +1044,7 @@ static void wayland_configure_window(HWND hwnd)
+@@ -1051,6 +1051,7 @@ static void wayland_configure_window(HWND hwnd)
      INT width, height, window_width, window_height;
      UINT flags = 0;
      UINT state_cmd = 0;
@@ -127,7 +130,7 @@ index dc155e366ee382d544b7abf58aac68542bcc0d38..bea51157bcc7806ee656d4d9d6e86d63
      uint32_t state;
      DWORD style;
      BOOL needs_enter_size_move = FALSE;
-@@ -1080,9 +1081,9 @@ static void wayland_configure_window(HWND hwnd)
+@@ -1088,9 +1089,9 @@ static void wayland_configure_window(HWND hwnd)
       * size adherence, in order to avoid spurious resizes.
       * The tiled and maximized states have a strict size adherance, so
       * their sizes cannot change while we are still processing the new config.
@@ -140,7 +143,7 @@ index dc155e366ee382d544b7abf58aac68542bcc0d38..bea51157bcc7806ee656d4d9d6e86d63
          (surface->current.state & (WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED |
                                     WAYLAND_SURFACE_CONFIG_STATE_TILED)))
      {
-@@ -1105,6 +1106,8 @@ static void wayland_configure_window(HWND hwnd)
+@@ -1113,6 +1114,8 @@ static void wayland_configure_window(HWND hwnd)
          surface->resizing = FALSE;
          needs_exit_size_move = TRUE;
      }
@@ -149,7 +152,7 @@ index dc155e366ee382d544b7abf58aac68542bcc0d38..bea51157bcc7806ee656d4d9d6e86d63
  
      /* Only Win32 maximize and decoration transitions change non-client metrics.
       * Fullscreen is a Wayland presentation state, not a Win32 window style. */
-@@ -1151,10 +1154,10 @@ static void wayland_configure_window(HWND hwnd)
+@@ -1181,10 +1184,10 @@ static void wayland_configure_window(HWND hwnd)
      TRACE("hwnd=%p processing=%s,%#x\n", hwnd, wine_dbgstr_rect(&rect), state);
  
      if (needs_enter_size_move) send_message(hwnd, WM_ENTERSIZEMOVE, 0, 0);
@@ -161,7 +164,7 @@ index dc155e366ee382d544b7abf58aac68542bcc0d38..bea51157bcc7806ee656d4d9d6e86d63
          TRACE("hwnd=%p queueing state update %#x rect=%s\n", hwnd, state_cmd,
                wine_dbgstr_rect(&rect));
          NtUserPostMessage(hwnd, WM_WINE_WINDOW_STATE_CHANGED, 0, 0);
-@@ -1191,7 +1194,16 @@ static void wayland_configure_window(HWND hwnd)
+@@ -1221,7 +1224,16 @@ static void wayland_configure_window(HWND hwnd)
          wayland_win_data_release(data);
      }
  
@@ -178,7 +181,7 @@ index dc155e366ee382d544b7abf58aac68542bcc0d38..bea51157bcc7806ee656d4d9d6e86d63
  
      /* Ack/promote the processed configure if rawpos did not flush it. */
      if ((data = wayland_win_data_get(hwnd)))
-@@ -1490,6 +1502,7 @@ LRESULT WAYLAND_SysCommand(HWND hwnd, WPARAM wparam, LPARAM lparam, const POINT
+@@ -1539,6 +1551,7 @@ LRESULT WAYLAND_SysCommand(HWND hwnd, WPARAM wparam, LPARAM lparam, const POINT
                  }
                  else if (command == SC_SIZE)
                  {
@@ -187,7 +190,7 @@ index dc155e366ee382d544b7abf58aac68542bcc0d38..bea51157bcc7806ee656d4d9d6e86d63
                                          hittest_to_resize_edge(wparam & 0x0f));
                  }
 diff --git a/dlls/winex11.drv/window.c b/dlls/winex11.drv/window.c
-index f45fee5c37bf8884db6b38a91fb20e5c6fac3570..f613e7696b672302d2d5e9040ad1d21bdb14d307 100644
+index 8de420a..e993cd7 100644
 --- a/dlls/winex11.drv/window.c
 +++ b/dlls/winex11.drv/window.c
 @@ -2090,6 +2090,8 @@ BOOL X11DRV_GetWindowStateUpdates( HWND hwnd, UINT *state_cmd, UINT *swp_flags,
@@ -232,7 +235,7 @@ index f45fee5c37bf8884db6b38a91fb20e5c6fac3570..f613e7696b672302d2d5e9040ad1d21b
      if (!*state_cmd && !*swp_flags && !*foreground) return FALSE;
      TRACE( "hwnd %p, returning state_cmd %#x, swp_flags %#x, rect %s, foreground %p\n",
             hwnd, *state_cmd, *swp_flags, wine_dbgstr_rect(rect), *foreground );
-@@ -4081,6 +4106,7 @@ static LRESULT start_screensaver(void)
+@@ -4104,6 +4129,7 @@ static LRESULT start_screensaver(void)
  LRESULT X11DRV_SysCommand( HWND hwnd, WPARAM wparam, LPARAM lparam, const POINT *pos )
  {
      WPARAM hittest = wparam & 0x0f;
@@ -240,7 +243,7 @@ index f45fee5c37bf8884db6b38a91fb20e5c6fac3570..f613e7696b672302d2d5e9040ad1d21b
      int dir;
      struct x11drv_win_data *data;
  
-@@ -4138,8 +4164,16 @@ LRESULT X11DRV_SysCommand( HWND hwnd, WPARAM wparam, LPARAM lparam, const POINT
+@@ -4161,8 +4187,16 @@ LRESULT X11DRV_SysCommand( HWND hwnd, WPARAM wparam, LPARAM lparam, const POINT
          goto failed;
      }
  
@@ -258,10 +261,10 @@ index f45fee5c37bf8884db6b38a91fb20e5c6fac3570..f613e7696b672302d2d5e9040ad1d21b
  
  failed:
 diff --git a/dlls/winex11.drv/x11drv.h b/dlls/winex11.drv/x11drv.h
-index 1e3f2132c3b55e9ffa9ce2c8f2ed6d60c236c456..4627c40cbe45169f4a84efa6e74e11362edf6e6f 100644
+index d3df5d1..5385eaf 100644
 --- a/dlls/winex11.drv/x11drv.h
 +++ b/dlls/winex11.drv/x11drv.h
-@@ -706,6 +706,7 @@ struct x11drv_win_data
+@@ -747,6 +747,7 @@ struct x11drv_win_data
      unsigned long *icon_bits;
      unsigned int   icon_size;
      Time           user_time;
@@ -270,18 +273,18 @@ index 1e3f2132c3b55e9ffa9ce2c8f2ed6d60c236c456..4627c40cbe45169f4a84efa6e74e1136
      struct window_state desired_state; /* window state tracking the desired / win32 state */
      struct window_state pending_state; /* window state tracking the pending / requested state */
 diff --git a/include/ntuser.h b/include/ntuser.h
-index d2109ff3cbf0a21810a591d44b0aa8b80e48d4d9..b9d6a0ca43b586a6a864bb00c88441c4b681dd05 100644
+index 8f363a5..298aa77 100644
 --- a/include/ntuser.h
 +++ b/include/ntuser.h
-@@ -1444,6 +1444,7 @@ enum
-     NtUserCallHwndParam_ExposeWindowSurface,
-     NtUserCallHwndParam_GetWinMonitorDpi,
+@@ -1446,6 +1446,7 @@ enum
      NtUserCallHwndParam_SetRawWindowPos,
+     NtUserCallHwndParam_GetPrivateData,
+     NtUserCallHwndParam_SetPrivateData,
 +    NtUserCallHwndParam_SendSizingMessage,
  };
  
  struct get_window_rects_params
-@@ -1674,4 +1675,17 @@ static inline BOOL NtUserSetRawWindowPos( HWND hwnd, RECT rect, UINT flags, BOOL
+@@ -1686,6 +1687,19 @@ static inline BOOL NtUserSetRawWindowPos( HWND hwnd, RECT rect, UINT flags, BOOL
      return NtUserCallHwndParam( hwnd, (UINT_PTR)&params, NtUserCallHwndParam_SetRawWindowPos );
  }
  
@@ -298,4 +301,6 @@ index d2109ff3cbf0a21810a591d44b0aa8b80e48d4d9..b9d6a0ca43b586a6a864bb00c88441c4
 +    return NtUserCallHwndParam( hwnd, (UINT_PTR)&params, NtUserCallHwndParam_SendSizingMessage );
 +}
 +
- #endif /* _NTUSER_ */
+ struct get_private_data_params
+ {
+     UINT offset;

@@ -50,7 +50,7 @@ index 770937e7..98438fb1 100644
 +IMPORTS   = hid cfgmgr32 advapi32 user32
  PARENTSRC = ../xinput1_3
  
- SOURCES = \
+ VER_FILEDESCRIPTION_STR = "Wine Common Controller API"
 diff --git a/dlls/xinput1_2/Makefile.in b/dlls/xinput1_2/Makefile.in
 index a8c71b40..6804d8e8 100644
 --- a/dlls/xinput1_2/Makefile.in
@@ -62,19 +62,19 @@ index a8c71b40..6804d8e8 100644
 +IMPORTS   = hid cfgmgr32 advapi32 user32
  PARENTSRC = ../xinput1_3
  
- SOURCES = \
+ VER_FILEDESCRIPTION_STR = "Wine Common Controller API"
 diff --git a/dlls/xinput1_3/Makefile.in b/dlls/xinput1_3/Makefile.in
 index d2ffaf29..eb7ec111 100644
 --- a/dlls/xinput1_3/Makefile.in
 +++ b/dlls/xinput1_3/Makefile.in
-@@ -1,7 +1,7 @@
+@@ -1,6 +1,6 @@
  EXTRADEFS = -DXINPUT_VER=3
  MODULE    = xinput1_3.dll
  IMPORTLIB = xinput
 -IMPORTS   = hid setupapi advapi32 user32 ntdll
 +IMPORTS   = hid cfgmgr32 advapi32 user32 ntdll
  
- SOURCES = \
+ VER_FILEDESCRIPTION_STR = "Wine Common Controller API"
  	main.c \
 diff --git a/dlls/xinput1_3/main.c b/dlls/xinput1_3/main.c
 index 49facd58..72d9b520 100644
@@ -89,7 +89,7 @@ index 49facd58..72d9b520 100644
  #include "devpkey.h"
  #include "hidusage.h"
  #include "winioctl.h"
-@@ -770,51 +770,67 @@ static void try_remove_device(const WCHAR *device_path)
+@@ -770,81 +770,97 @@ static void try_remove_device(const WCHAR *device_path)
          controller_destroy(&controllers[i], FALSE);
  }
  
@@ -131,6 +131,36 @@ index 49facd58..72d9b520 100644
      BOOL native_present = FALSE;
  
      EnterCriticalSection(&xinput_cs);
+ 
+     if (deviface_key)
+     {
+         if (WaitForSingleObject(key_changed_event, 0) == WAIT_TIMEOUT)
+         {
+             LeaveCriticalSection(&xinput_cs);
+             return;
+         }
+         TRACE("key changed.\n");
+     }
+     else
+     {
+         WCHAR keystr[256];
+ 
+         swprintf(keystr, ARRAY_SIZE(keystr), L"System\\CurrentControlSet\\Control\\DeviceClasses\\{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+                  guid.Data1,
+                  guid.Data2, guid.Data3, guid.Data4[0], guid.Data4[1], guid.Data4[2], guid.Data4[3],
+                  guid.Data4[4], guid.Data4[5], guid.Data4[6], guid.Data4[7]);
+ 
+         if (RegOpenKeyW(HKEY_LOCAL_MACHINE, keystr, &deviface_key))
+         {
+             TRACE("Failed to open key %s.\n", debugstr_w(keystr));
+             LeaveCriticalSection(&xinput_cs);
+             return;
+         }
+         key_changed_event = CreateEventW(NULL, FALSE, FALSE, NULL);
+         TRACE("opened key %p, event %p.\n", deviface_key, key_changed_event);
+     }
+     if (RegNotifyChangeKeyValue(deviface_key, TRUE, REG_NOTIFY_CHANGE_NAME | REG_NOTIFY_CHANGE_LAST_SET, key_changed_event, TRUE))
+         ERR("RegNotifyChangeKeyValue failed.\n");
  
 -    set = SetupDiGetClassDevsW(&guid, NULL, NULL, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
 -    detail->cbSize = sizeof(*detail);
@@ -190,4 +220,4 @@ index 482f75d0..e282d450 100644
 +IMPORTS   = hid cfgmgr32 advapi32 user32
  PARENTSRC = ../xinput1_3
  
- SOURCES = \
+ VER_FILEDESCRIPTION_STR = "Wine Common Controller API"

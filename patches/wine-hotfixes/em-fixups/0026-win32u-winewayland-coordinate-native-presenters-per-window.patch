@@ -9,47 +9,43 @@ This is a focused GE-Proton adaptation of Wine-Wineland commit 13bb88cb72c8a86fa
 
 Source: https://github.com/nanomatters/wine-wineland/commit/13bb88cb72c8a86fad4f1c6ca1152380ceb7c89d
 ---
- dlls/win32u/opengl.c                   |  11 +-
+ dlls/win32u/opengl.c                   |   8 +
  dlls/win32u/vulkan.c                   |   8 +
  dlls/win32u/window.c                   |   1 +
- dlls/winewayland.drv/vulkan.c          |   6 +-
- dlls/winewayland.drv/wayland_surface.c | 203 ++++++++++++++++++-------
+ dlls/winewayland.drv/wayland_surface.c | 200 ++++++++++++++++++-------
  dlls/winewayland.drv/waylanddrv.h      |   4 +
- dlls/winewayland.drv/window.c          |  50 +++---
+ dlls/winewayland.drv/window.c          |  53 +++---
  include/wine/gdi_driver.h              |   2 +
  include/wine/opengl_driver.h           |   1 +
- 9 files changed, 208 insertions(+), 78 deletions(-)
+ 8 files changed, 201 insertions(+), 76 deletions(-)
 
 diff --git a/dlls/win32u/opengl.c b/dlls/win32u/opengl.c
 index a75f923b4b2..7bb204847ff 100644
 --- a/dlls/win32u/opengl.c
 +++ b/dlls/win32u/opengl.c
-@@ -156,7 +156,11 @@ void opengl_drawable_release( struct opengl_drawable *drawable )
+@@ -426,8 +426,12 @@ void opengl_drawable_release( struct opengl_drawable *drawable )
          if (drawable->surface) funcs->p_eglDestroySurface( egl->display, drawable->surface );
          if (drawable->client)
          {
 +            if (drawable->client_active)
 +                InterlockedDecrement( &drawable->client->native_ref );
+             use_window_client_surface( drawable->client, FALSE );
              InterlockedDecrement( &drawable->client->busy_ref );
 +            if (drawable->client_active)
 +                client_surface_update( drawable->client );
              client_surface_release( drawable->client );
          }
          free( drawable );
-@@ -2101,7 +2105,12 @@ static struct opengl_drawable *get_window_unused_drawable( HWND hwnd, int format
-     if (!drawable)
-     {
-         driver_funcs->p_surface_create( hwnd, raw, format, &drawable );
--        if (drawable && drawable->client) add_window_client_surface( hwnd, drawable->client );
-+        if (drawable && drawable->client)
-+        {
-+            InterlockedIncrement( &drawable->client->native_ref );
-+            drawable->client_active = TRUE;
-+            add_window_client_surface( hwnd, drawable->client );
-+        }
+@@ -2350,4 +2350,9 @@ static struct opengl_drawable *get_window_unused_drawable( HWND hwnd, int format
+             use_window_client_surface( client, !!drawable );
++            if (drawable && drawable->client)
++            {
++                InterlockedIncrement( &drawable->client->native_ref );
++                drawable->client_active = TRUE;
++            }
+             client_surface_release( client );
+         }
      }
- 
-     if (drawable && drawable->funcs != &framebuffer_surface_funcs && raw)
 diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
 index 88ebd966fb0..a367ae50470 100644
 --- a/dlls/win32u/vulkan.c
@@ -109,31 +105,14 @@ diff --git a/dlls/win32u/window.c b/dlls/win32u/window.c
 index 4474d6e2a3a..1c40e2cc252 100644
 --- a/dlls/win32u/window.c
 +++ b/dlls/win32u/window.c
-@@ -333,6 +333,7 @@ void *client_surface_create( UINT size, const struct client_surface_funcs *funcs
-     if (!(surface = calloc( 1, size ))) return NULL;
+@@ -404,6 +404,7 @@ void *client_surface_create( const struct client_surface_funcs *funcs, HWND hwn
+     if (!(surface = calloc( 1, funcs->size ))) return NULL;
      surface->funcs = funcs;
      surface->ref = 1;
 +    surface->presentation_owner = TRUE;
      surface->hwnd = hwnd;
-     list_init( &surface->entry );
- 
-diff --git a/dlls/winewayland.drv/vulkan.c b/dlls/winewayland.drv/vulkan.c
-index 5cfb1c21513..05eb2672c6f 100644
---- a/dlls/winewayland.drv/vulkan.c
-+++ b/dlls/winewayland.drv/vulkan.c
-@@ -66,7 +66,11 @@ static struct wayland_client_surface *stash_client_surface(HWND hwnd,
-         data->stashed_client = NULL;
-         /* detach the client surface to ensure it is reparented */
-         wayland_client_surface_attach(ret, NULL);
--        if (data->client_surface == ret) data->client_surface = NULL;
-+        if (data->client_surface == ret)
-+        {
-+            InterlockedExchange(&ret->client.presentation_owner, FALSE);
-+            data->client_surface = NULL;
-+        }
-     }
-     else ret = NULL;
- 
+     surface->format = format;
+     surface->raw = raw;
 diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayland_surface.c
 index 08ef39f8749..ceecdc8e63c 100644
 --- a/dlls/winewayland.drv/wayland_surface.c
@@ -167,8 +146,8 @@ index 08ef39f8749..ceecdc8e63c 100644
      /* A single opaque client surface covering the whole toplevel can sit above
       * an opaque parent carrier without using transparent punch-through. */
      if (hwnd != toplevel) return FALSE;
-@@ -4530,13 +4523,139 @@ struct wayland_client_surface *impl_from_client_surface(struct client_surface *c
-     return CONTAINING_RECORD(client, struct wayland_client_surface, client);
+@@ -4798,13 +4798,139 @@ POINT map_point_from_surface(struct wayland_surface *surface, POINT point)
+     return point;
  }
  
 +static BOOL is_client_visible(HWND hwnd);
@@ -294,7 +273,7 @@ index 08ef39f8749..ceecdc8e63c 100644
  
 +    if ((data = wayland_win_data_get(client->hwnd)))
 +    {
-+        wayland_client_surface_attach(surface, NULL);
++        wayland_client_surface_attach(surface, NULL, NULL);
 +        wayland_client_surface_unregister(surface);
 +        if (data->client_surface == surface) data->client_surface = NULL;
 +        wayland_client_surface_update_owner(data);
@@ -307,12 +286,14 @@ index 08ef39f8749..ceecdc8e63c 100644
      if ((callback = InterlockedExchangePointer((void **)&surface->wl_callback, NULL)))
          wl_callback_destroy(callback);
      if (surface->throttle)
-@@ -4562,10 +4681,13 @@ static void wayland_client_surface_detach(struct client_surface *client)
+@@ -4830,12 +4830,15 @@ static void wayland_client_surface_detach(struct client_surface *client)
+ 
+     TRACE("%s\n", debugstr_client_surface(client));
  
      if ((data = wayland_win_data_get(client->hwnd)))
      {
 -        if (data->client_surface == surface) data->client_surface = NULL;
-         wayland_client_surface_attach(surface, NULL);
+         wayland_client_surface_attach(surface, NULL, NULL);
 +        wayland_client_surface_unregister(surface);
 +        if (data->client_surface == surface) data->client_surface = NULL;
 +        wayland_client_surface_update_owner(data);
@@ -322,7 +303,7 @@ index 08ef39f8749..ceecdc8e63c 100644
  }
  
  static BOOL is_client_visible(HWND hwnd)
-@@ -4583,28 +4705,17 @@ static void wayland_client_surface_update(struct client_surface *client)
+@@ -4856,28 +4978,17 @@ static void wayland_client_surface_update(struct client_surface *client)
  {
      struct wayland_client_surface *surface = impl_from_client_surface(client);
      struct wayland_win_data *data;
@@ -358,7 +339,9 @@ index 08ef39f8749..ceecdc8e63c 100644
  }
  
  static BOOL wayland_surface_has_live_role(struct wayland_surface *surface);
-@@ -4698,45 +4809,22 @@ static void wayland_client_surface_present(struct client_surface *client, HDC hd
+@@ -4963,9 +4963,9 @@ static void wayland_client_surface_present(struct client_surface *client, HDC hd
+         surface->has_presented = TRUE;
+         return;
      }
  
      surface->has_presented = TRUE;
@@ -367,15 +350,7 @@ index 08ef39f8749..ceecdc8e63c 100644
      ensure_window_surface_contents(toplevel);
  }
  
- void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
- {
--    HWND toplevel = NtUserGetAncestor(hwnd, GA_ROOT);
--    struct wayland_client_surface *old_client;
-     struct wayland_win_data *data;
--    BOOL visible;
- 
-     /* ownership is shared with the callers, the last caller to release
-      * its reference will also destroy it and clear our pointer. */
+@@ -5018,29 +5016,9 @@ void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
  
      if (!(data = wayland_win_data_get(hwnd))) return;
  
@@ -408,14 +383,13 @@ index 08ef39f8749..ceecdc8e63c 100644
      wayland_win_data_release(data);
  }
  
-@@ -4754,6 +4842,7 @@ struct wayland_client_surface *wayland_client_surface_create(HWND hwnd)
+@@ -5094,5 +5094,6 @@ struct client_surface *WAYLAND_CreateClientSurface(HWND hwnd, int pixel_format,
      struct wl_region *empty_region;
  
-     if (!(client = client_surface_create(sizeof(*client), &wayland_client_surface_funcs, hwnd))) return NULL;
+     if (!(client = client_surface_create(&wayland_client_surface_funcs, hwnd, pixel_format, raw))) return NULL;
 +    list_init(&client->hwnd_entry);
  
      client->wl_surface =
-         wl_compositor_create_surface(process_wayland.wl_compositor);
 diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
 index f7613534b06..96398b3a1a7 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
@@ -496,7 +470,7 @@ index b446a41375e..7c87c926ac2 100644
          (surface->role == WAYLAND_SURFACE_ROLE_NONE ||
           (surface->role == WAYLAND_SURFACE_ROLE_LAYER && !surface->zwlr_layer_surface_v1)))
      {
--        if (client) wayland_client_surface_attach(client, NULL);
+-        if (client) wayland_client_surface_attach(client, NULL, NULL);
 +        wayland_client_surfaces_attach(data, NULL);
          wayland_surface_destroy(data->wayland_surface);
          data->wayland_surface = NULL;
@@ -512,8 +486,8 @@ index b446a41375e..7c87c926ac2 100644
      surface->ensured_contents = WAYLAND_SURFACE_NOT_ENSURED;
  
 @@ -450,12 +469,10 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
-         break;
-     }
+     surface->window.visible = visible;
+     wayland_win_data_get_config(data, &surface->window);
  
 -    if (client)
 -    {
@@ -546,16 +520,19 @@ index b446a41375e..7c87c926ac2 100644
      struct wayland_win_data *data, *toplevel_data, *owner_data;
      BOOL managed, fullscreen = swp_flags & WINE_SWP_FULLSCREEN;
      BOOL tray_menu = swp_flags & WINE_SWP_TRAY_MENU;
-@@ -997,13 +1012,10 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
+@@ -997,16 +1012,10 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
  
      if (!surface)
      {
 -        if ((client = data->client_surface))
 -        {
 -            if (toplevel && NtUserIsWindowVisible(hwnd) && !window_or_root_minimized(hwnd))
--                wayland_client_surface_attach(client, toplevel);
+-                wayland_client_surface_attach(client, toplevel, &client->client.monitor_rect);
 -            else
--                wayland_client_surface_attach(client, NULL);
+-            {
+-                wayland_client_surface_attach(client, NULL, NULL);
+-                data->client_surface = NULL;
+-            }
 -        }
 +        if (toplevel && NtUserIsWindowVisible(hwnd) && !window_or_root_minimized(hwnd))
 +            wayland_client_surfaces_attach(data, toplevel);
@@ -568,26 +545,27 @@ diff --git a/include/wine/gdi_driver.h b/include/wine/gdi_driver.h
 index 0cbc6e84bb5..507a5be74ad 100644
 --- a/include/wine/gdi_driver.h
 +++ b/include/wine/gdi_driver.h
-@@ -264,6 +264,8 @@ struct client_surface
+@@ -278,8 +278,10 @@ struct client_surface
      struct list                        entry;          /* entry in win32u managed list */
      LONG                               ref;            /* reference count */
      LONG                               busy_ref;       /* count of drawables/swapchains referencing this surface */
 +    LONG                               native_ref;     /* active drawables/swapchains using host WSI */
 +    LONG                               presentation_owner; /* selected renderer for the window */
      HWND                               hwnd;           /* window the surface was created for */
+     int                                format;         /* pixel format of the surface */
      LONG                               updated;        /* has been moved / resized / reparented */
+     HWND                               toplevel;       /* toplevel window of the surface */
      LONG                               offscreen;      /* client window is offscreen */
 diff --git a/include/wine/opengl_driver.h b/include/wine/opengl_driver.h
 index 3c3feacb73d..b5ac8cc7cd7 100644
 --- a/include/wine/opengl_driver.h
 +++ b/include/wine/opengl_driver.h
-@@ -255,6 +255,7 @@ struct opengl_drawable
-     int                                 interval;       /* last set surface swap interval */
+@@ -304,5 +304,6 @@ struct opengl_drawable
+     SIZE                                monitor_size;   /* size in raw physical coordinate space */
      BOOL                                doublebuffer;   /* pixel format is double buffered */
      BOOL                                stereo;         /* pixel format is stereo buffered */
 +    BOOL                                client_active;  /* native client surface activation was committed */
+     BOOL                                srgb;           /* default framebuffer is SRGB */
      EGLSurface                          surface;        /* surface for EGL based drivers */
-     GLuint                              read_fbo;       /* default read FBO name when emulating framebuffer */
-     GLuint                              draw_fbo;       /* default draw FBO name when emulating framebuffer */
 -- 
 2.55.0

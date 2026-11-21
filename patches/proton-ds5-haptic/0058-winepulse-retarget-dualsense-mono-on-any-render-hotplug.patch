@@ -55,7 +55,7 @@ index cf072b9221cacbd84c9973e5a5a10634954fa544..cda5470e0e86b02b981848288396602e
      struct list *added = flow == eRender ? &g_phys_speakers_added : &g_phys_sources_added;
      struct list *removed = flow == eRender ? &g_phys_speakers_removed : &g_phys_sources_removed;
 +    BOOL dualsense_speaker_added = FALSE;
-     PhysDevice *dev, *next;
+     PhysDevice *dev, *next, *existing;
      pa_mainloop *ml;
      pa_context *ctx;
 @@ -1531,7 +1534,10 @@ static BOOL pulse_refresh_devices(EDataFlow flow)
@@ -102,7 +102,7 @@ index cf072b9221cacbd84c9973e5a5a10634954fa544..cda5470e0e86b02b981848288396602e
      pulse_stream_disconnect(stream);
      free(stream->device);
      stream->device = dualsense_speaker;
-@@ -2295,6 +2311,21 @@ static HRESULT pulse_retarget_dualsense_mono_stream(struct pulse_stream *stream)
+@@ -398,6 +398,21 @@ static HRESULT pulse_retarget_dualsense_mono_stream(struct pulse_stream *stream)
      return hr;
  }
  
@@ -121,15 +121,17 @@ index cf072b9221cacbd84c9973e5a5a10634954fa544..cda5470e0e86b02b981848288396602e
 +    }
 +}
 +
- static char *find_dualsense_haptic_alsa_path(void)
+ static int g_phys_cond_timedwait_ms(unsigned int timeout_ms)
  {
-     snd_pcm_info_t *info;
-@@ -2826,6 +2857,7 @@ static NTSTATUS pulse_create_stream(void *args)
-             stream->haptic_hotplug_generation = g_haptic_hotplug_generation;
+     struct timespec ts;
+@@ -3210,8 +3210,9 @@ static NTSTATUS pulse_create_stream(void *args)
          if (dualsense_mono_candidate)
          {
+             g_phys_lock();
+             stream->haptic_hotplug_generation = g_haptic_hotplug_generation;
 +            stream->dualsense_mono_stream = TRUE;
              stream->dualsense_mono_hotplug_generation = g_dualsense_mono_speaker_add_generation;
+             g_phys_unlock();
              list_add_tail(&dualsense_mono_streams, &stream->dualsense_mono_entry);
              stream->dualsense_mono_registered = TRUE;
 @@ -3108,8 +3140,10 @@ static void pulse_write(struct pulse_stream *stream)

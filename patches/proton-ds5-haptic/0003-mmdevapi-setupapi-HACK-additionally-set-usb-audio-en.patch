@@ -5,14 +5,14 @@ Subject: [PATCH 03/11] mmdevapi/setupapi: HACK: additionally set usb audio
  entries for MHWilds
 ---
  dlls/mmdevapi/devenum.c | 235 +++++++++++++++++++++++++++++++++++++++++++++---
- dlls/setupapi/devinst.c |   3 +-
- 2 files changed, 225 insertions(+), 13 deletions(-)
+ dlls/setupapi/devinst.c   |   4 +-
+ 2 files changed, 226 insertions(+), 13 deletions(-)
 
 diff --git a/dlls/mmdevapi/devenum.c b/dlls/mmdevapi/devenum.c
-index 6053bb1f5dcda3610dfc2b4c59947ee5c1de21dc..42515e1b1d77f2af21f1c8689744ab33e166f60d 100644
+index 058c117..763b805 100644
 --- a/dlls/mmdevapi/devenum.c
 +++ b/dlls/mmdevapi/devenum.c
-@@ -627,17 +627,117 @@ static const WCHAR *find_product_name_override(const WCHAR *device_id)
+@@ -523,17 +523,117 @@ static const WCHAR *find_product_name_override(const WCHAR *device_id)
  /* Fix DualSense Wireless Controller haptic detection for some. */
  /* This is way less code than even a skeleton pnp driver, not to mention the difficulty of setting friendly name */
  /* from within ntoskrnl. */
@@ -130,9 +130,9 @@ index 6053bb1f5dcda3610dfc2b4c59947ee5c1de21dc..42515e1b1d77f2af21f1c8689744ab33
  
 +    // TODO move to wine.inf?
      {
-         /* len of ControlClass + '\\' + guidstr */
+         /* len of ControlClass + '\' + guidstr */
          WCHAR buf[78];
-@@ -655,11 +755,30 @@ static void MMDevice_Register(const WCHAR *instguid, const WCHAR *friendly_name,
+@@ -551,11 +651,30 @@ static void MMDevice_Register(const WCHAR *instguid, const WCHAR *friendly_name,
              RegSetValueExW(key, L"Class", 0, REG_SZ, (LPBYTE)AudioEndpoint_Class, ARRAY_SIZE(AudioEndpoint_Class) * sizeof(WCHAR));
              RegCloseKey(key);
          }
@@ -163,7 +163,7 @@ index 6053bb1f5dcda3610dfc2b4c59947ee5c1de21dc..42515e1b1d77f2af21f1c8689744ab33
          if (swprintf(device_name, ARRAY_SIZE(device_name), L"SWD\\MMDEVAPI\\{0.0.%u.00000000}.%s", flow, instguid) != -1)
          {
              memset(&device_info_data, 0, sizeof(device_info_data));
-@@ -715,6 +834,94 @@ static void MMDevice_Register(const WCHAR *instguid, const WCHAR *friendly_name,
+@@ -611,6 +730,94 @@ static void MMDevice_Register(const WCHAR *instguid, const WCHAR *friendly_name,
          else
              WARN("swprintf failed.");
  
@@ -258,13 +258,16 @@ index 6053bb1f5dcda3610dfc2b4c59947ee5c1de21dc..42515e1b1d77f2af21f1c8689744ab33
          SetupDiDestroyDeviceInfoList(device_set);
      }
      else
-@@ -730,11 +937,12 @@ static MMDevice *MMDevice_Create(const WCHAR *name, GUID *id, EDataFlow flow, DW
+@@ -626,7 +833,7 @@ static MMDevice *MMDevice_Create(const WCHAR *name, GUID *id, EDataFlow flow, DW
      HKEY key, root;
      MMDevice *device, *cur = NULL;
      WCHAR guidstr[39];
 -    PROPVARIANT container_id;
 +    PROPVARIANT device_path, container_id;
-     WCHAR friendly_name[FRIENDLY_NAME_MAX];
+     BOOL update_add = FALSE;
+     BOOL update_readd = FALSE;
+     BOOL update_state = FALSE;
+@@ -634,6 +841,7 @@ static MMDevice *MMDevice_Create(const WCHAR *name, GUID *id, EDataFlow flow, DW
      const WCHAR *device_iname;
      const WCHAR *device_desc = flow == eRender ? L"Speakers" : L"Microphone";
      const WCHAR *friendly_name_fmt = L"%ls (%ls)";
@@ -272,7 +275,7 @@ index 6053bb1f5dcda3610dfc2b4c59947ee5c1de21dc..42515e1b1d77f2af21f1c8689744ab33
  
      static const PROPERTYKEY deviceinterface_key = {
          {0x233164c8, 0x1b2c, 0x4c7d, {0xbc, 0x68, 0xb6, 0x71, 0x68, 0x7a, 0x25, 0x67}}, 1
-@@ -744,7 +952,9 @@ static MMDevice *MMDevice_Create(const WCHAR *name, GUID *id, EDataFlow flow, DW
+@@ -643,7 +851,9 @@ static MMDevice *MMDevice_Create(const WCHAR *name, GUID *id, EDataFlow flow, DW
          {0xb3f8fa53, 0x0004, 0x438e, {0x90, 0x03, 0x51, 0xa4, 0x6e, 0x13, 0x9b, 0xfc}}, 2
      };
  
@@ -280,10 +283,10 @@ index 6053bb1f5dcda3610dfc2b4c59947ee5c1de21dc..42515e1b1d77f2af21f1c8689744ab33
      PropVariantInit(&container_id);
 +    dualsense_mono_endpoint = flow == eRender && is_dualsense_mono_endpoint_name(name);
  
+     EnterCriticalSection(&device_list_cs);
      LIST_FOR_EACH_ENTRY(device, &device_list, MMDevice, entry)
-     {
-@@ -792,19 +1002,16 @@ static MMDevice *MMDevice_Create(const WCHAR *name, GUID *id, EDataFlow flow, DW
-             PROPVARIANT pv;
+@@ -703,19 +913,16 @@ static MMDevice *MMDevice_Create(const WCHAR *name, GUID *id, EDataFlow flow, DW
+             set_driver_prop_value(id, flow, (const PROPERTYKEY*)&DEVPKEY_Device_InstanceId);
  
              if (SUCCEEDED(set_driver_prop_value(id, flow, &devicepath_key))) {
 -                PROPVARIANT pv2;
@@ -307,7 +310,7 @@ index 6053bb1f5dcda3610dfc2b4c59947ee5c1de21dc..42515e1b1d77f2af21f1c8689744ab33
              }
  
              pv.vt = VT_LPWSTR;
-@@ -855,7 +1062,11 @@ static MMDevice *MMDevice_Create(const WCHAR *name, GUID *id, EDataFlow flow, DW
+@@ -768,7 +975,11 @@ static MMDevice *MMDevice_Create(const WCHAR *name, GUID *id, EDataFlow flow, DW
          RegCloseKey(key);
      }
  
@@ -319,25 +322,28 @@ index 6053bb1f5dcda3610dfc2b4c59947ee5c1de21dc..42515e1b1d77f2af21f1c8689744ab33
 +    PropVariantClear(&device_path);
      PropVariantClear(&container_id);
  
-     if (setdefault)
+     if (state == DEVICE_STATE_ACTIVE)
 diff --git a/dlls/setupapi/devinst.c b/dlls/setupapi/devinst.c
-index 57f467aab40ce04295137b4e6c138f5a3571d2a0..e3097fa3dcd5f7998646af0d6e648d4b9c9a116c 100644
+index 1b8d735..5f48379 100644
 --- a/dlls/setupapi/devinst.c
 +++ b/dlls/setupapi/devinst.c
-@@ -2055,6 +2055,7 @@ end:
- 
+@@ -49,6 +49,7 @@
+ #include "mmdeviceapi.h"
+ #include "initguid.h"
+ #include "devpkey.h"
++#include "ksuuids.h"
+ /* Instantiate only these two: including mmdeviceapi.h under INITGUID
+  * would also instantiate all propsys/msxml GUIDs and conflict with libuuid. */
  DEFINE_GUID(DEVINTERFACE_AUDIO_RENDER, 0xe6327cad,0xdcec,0x4949,0xae,0x8a,0x99,0x1e,0x97,0x6a,0x79,0xd2);
- DEFINE_GUID(DEVINTERFACE_AUDIO_CAPTURE, 0x2eef81be,0x33fa,0x4800,0x96,0x70,0x1c,0xd4,0x74,0x97,0x2c,0x3f);
-+DEFINE_GUID(AM_KSCATEGORY_AUDIO, 0x6994ad04,0x93ef,0x11d0,0xa3,0xcc,0x00,0xa0,0xc9,0x22,0x31,0x96);
- 
- static void SETUPDI_AddDeviceInterfaces(struct device *device, HKEY key,
-     const GUID *guid, DWORD flags)
-@@ -2064,7 +2065,7 @@ static void SETUPDI_AddDeviceInterfaces(struct device *device, HKEY key,
-     LONG l = ERROR_SUCCESS;
- 
-     /* Fake entries instead of a real driver. See mmdevapi/devenum.c */
--    const GUID *SKIP_PRESENT_CHECK[] = {&DEVINTERFACE_AUDIO_RENDER, &DEVINTERFACE_AUDIO_CAPTURE, NULL};
-+    const GUID *SKIP_PRESENT_CHECK[] = {&DEVINTERFACE_AUDIO_RENDER, &DEVINTERFACE_AUDIO_CAPTURE, &AM_KSCATEGORY_AUDIO, NULL};
-     bool skip_present_check = false;
- 
-     for (i = 0; SKIP_PRESENT_CHECK[i] ; i++)
+@@ -507,7 +508,8 @@ static struct device_iface *SETUPDI_CreateDeviceInterface(struct device *device,
+     if (is_linked(key))
+         iface->flags |= SPINT_ACTIVE;
+     else if (IsEqualGUID(class, &DEVINTERFACE_AUDIO_RENDER)
+-            || IsEqualGUID(class, &DEVINTERFACE_AUDIO_CAPTURE))
++            || IsEqualGUID(class, &DEVINTERFACE_AUDIO_CAPTURE)
++            || IsEqualGUID(class, &AM_KSCATEGORY_AUDIO))
+     {
+         /* Fake entries instead of a real driver. See mmdevapi/devenum.c */
+         DWORD linked = 1;
+-- 
+2.54.0

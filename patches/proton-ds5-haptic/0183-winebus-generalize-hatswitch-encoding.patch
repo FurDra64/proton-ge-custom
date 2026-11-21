@@ -46,17 +46,19 @@ diff --git a/dlls/winebus.sys/hid.c b/dlls/winebus.sys/hid.c
      return hid_device_end_collection(desc);
  }
  
-@@ -230,8 +239,8 @@ BOOL hid_device_add_hatswitch(struct unix_device *iface, INT count)
+@@ -231,10 +240,10 @@ BOOL hid_device_add_hatswitch(struct unix_device *iface, INT count)
      {
          USAGE_PAGE(1, HID_USAGE_PAGE_GENERIC),
          USAGE(1, HID_USAGE_GENERIC_HATSWITCH),
--        LOGICAL_MINIMUM(1, 1),
--        LOGICAL_MAXIMUM(1, 8),
-+        LOGICAL_MINIMUM(1, 0),
-+        LOGICAL_MAXIMUM(1, 7),
-         REPORT_SIZE(1, 4),
-         REPORT_COUNT(4, count),
-         UNIT(1, 0x0), /* None */
+         COLLECTION(1, Physical),
+             USAGE(1, HID_USAGE_GENERIC_HATSWITCH),
+-            LOGICAL_MINIMUM(1, 1),
+-            LOGICAL_MAXIMUM(1, 8),
++            LOGICAL_MINIMUM(1, 0),
++            LOGICAL_MAXIMUM(1, 7),
+             REPORT_SIZE(1, 4),
+             REPORT_COUNT(1, 1),
+             UNIT(1, 0x0), /* None */
 @@ -1493,33 +1502,32 @@ BOOL hid_device_set_button(struct unix_device *iface, ULONG index, BOOL is_set)
  /* hatswitch x / y vs value:
   *      -1  x +1

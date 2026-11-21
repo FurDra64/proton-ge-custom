@@ -21,23 +21,17 @@ diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
 index c4153e2ce46..eeea5b517d9 100644
 --- a/dlls/win32u/vulkan.c
 +++ b/dlls/win32u/vulkan.c
-@@ -1965,7 +1965,7 @@ static VkResult win32u_vkGetPhysicalDeviceSurfaceFormatsKHR( VkPhysicalDevice cl
-     struct vulkan_instance *instance = physical_device->instance;
- 
-     return instance->p_vkGetPhysicalDeviceSurfaceFormatsKHR( physical_device->host.physical_device,
--                                                                surface->obj.host.surface, format_count, formats );
-+                                                             surface->obj.host.surface, format_count, formats );
- }
- 
- static VkResult win32u_vkGetPhysicalDeviceSurfaceFormats2KHR( VkPhysicalDevice client_physical_device, const VkPhysicalDeviceSurfaceInfo2KHR *surface_info,
-@@ -2540,6 +2540,8 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
+@@ -3626,9 +3626,11 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
      VkSwapchainCreateInfoKHR create_info_host = *create_info;
      VkSurfaceCapabilitiesKHR capabilities;
      VkSwapchainKHR host_swapchain;
 +    uint32_t format_count = 0;
 +    VkSurfaceFormatKHR *formats;
+     struct ratio raw_dpi;
      RECT client_rect;
      VkResult res;
+     BOOL lite;
+     float sharpness;
  
 @@ -2556,6 +2558,7 @@ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwa
      res = instance->p_vkGetPhysicalDeviceSurfaceCapabilitiesKHR( physical_device->host.physical_device, surface->obj.host.surface, &capabilities );
@@ -97,8 +91,9 @@ index c4153e2ce46..eeea5b517d9 100644
      }
  
      InterlockedIncrement( &surface->client->busy_ref );
-@@ -4013,9 +4052,9 @@ static VkResult nulldrv_vulkan_surface_create( HWND hwnd, BOOL raw, const struct
-     return res;
+@@ -5476,10 +5476,10 @@ static VkResult nulldrv_vulkan_surface_create( struct client_surface *client, co
+     VkHeadlessSurfaceCreateInfoEXT create_info = {.sType = VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT};
+     return instance->p_vkCreateHeadlessSurfaceEXT( instance->host.instance, &create_info, NULL, surface );
  }
  
 -static VkResult nulldrv_vulkan_colorspace_configure( VkColorSpaceKHR *colorspace, struct client_surface *client )
@@ -118,8 +113,9 @@ index c4153e2ce46..eeea5b517d9 100644
      .p_get_physical_device_presentation_support = nulldrv_get_physical_device_presentation_support,
      .p_map_instance_extensions = nulldrv_map_instance_extensions,
      .p_map_device_extensions = nulldrv_map_device_extensions,
-@@ -4077,10 +4116,10 @@ static VkResult lazydrv_vulkan_surface_create( HWND hwnd, BOOL raw, const struct
-     return driver_funcs->p_vulkan_surface_create( hwnd, raw, instance, surface, client );
+@@ -5539,11 +5539,11 @@ static VkResult lazydrv_vulkan_surface_create( struct client_surface *client, co
+     vulkan_driver_load();
+     return driver_funcs->p_vulkan_surface_create( client, instance, surface );
  }
  
 -static VkResult lazydrv_vulkan_colorspace_configure( VkColorSpaceKHR *colorspace, struct client_surface *client )
@@ -144,8 +140,9 @@ diff --git a/dlls/winemac.drv/vulkan.c b/dlls/winemac.drv/vulkan.c
 index d9c83675e3b..187824d10d0 100644
 --- a/dlls/winemac.drv/vulkan.c
 +++ b/dlls/winemac.drv/vulkan.c
-@@ -90,9 +90,9 @@ err:
-     return VK_ERROR_INCOMPATIBLE_DRIVER;
+@@ -68,10 +68,10 @@ static VkResult macdrv_vulkan_surface_create(struct client_surface *client, con
+     TRACE("Created surface=0x%s\n", wine_dbgstr_longlong(*handle));
+     return VK_SUCCESS;
  }
  
 -static VkResult macdrv_vulkan_colorspace_configure(VkColorSpaceKHR *colorspace, struct client_surface *client)
@@ -475,7 +472,7 @@ index 3bf3688880f..33ec7aef655 100644
 @@ -366,7 +366,7 @@ struct client_surface;
  struct vulkan_driver_funcs
  {
-     VkResult (*p_vulkan_surface_create)(HWND, BOOL, const struct vulkan_instance *, VkSurfaceKHR *, struct client_surface **);
+     VkResult (*p_vulkan_surface_create)(struct client_surface *, const struct vulkan_instance *, VkSurfaceKHR *);
 -    VkResult (*p_vulkan_colorspace_configure)( VkColorSpaceKHR *, struct client_surface * );
 +    VkColorSpaceKHR (*p_vulkan_map_colorspace)( VkColorSpaceKHR, struct client_surface * );
      VkBool32 (*p_get_physical_device_presentation_support)(struct vulkan_physical_device *, uint32_t);

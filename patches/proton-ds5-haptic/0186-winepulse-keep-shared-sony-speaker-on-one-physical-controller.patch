@@ -61,15 +61,15 @@ diff --git a/dlls/mmdevapi/devenum.c b/dlls/mmdevapi/devenum.c
 diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -735,6 +735,8 @@ again:
- 
- static BOOL pulse_refresh_devices(EDataFlow flow);
+@@ -965,6 +965,8 @@
+ static char *find_dualsense_haptic_alsa_path(void);
  static BOOL is_dualsense_speaker_sink(const PhysDevice *dev);
 +static char *pulse_find_shared_sony_speaker_survivor(const PhysDevice *removed,
 +        struct list *active, struct list *added);
- static void pulse_retarget_dualsense_mono_streams(const char *preferred);
- static BOOL use_pipewire_dualsense_haptic_target(void);
- static BOOL use_dualsense_split_audio(void);
+ 
+ /* for winepulse, this function can be called in a separate thread from other functions. */
+ /* this function cannot be called from multiple threads at the same time however. */
+ /* for the list variable, all devices in it must be ready by the end of the lock. */
 @@ -878,6 +880,25 @@ static NTSTATUS pulse_get_endpoint_ids(void *args)
          pulse_wait_devices(list_added);
          pulse_wait_devices(list_removed);
@@ -131,30 +131,27 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
  static BOOL pulse_stream_dualsense_mono(const struct pulse_stream *stream)
  {
      return pulse_stream_dualsense_mono_format(stream) && string_contains_dualsense_name(stream->device);
-@@ -2902,21 +2957,45 @@ static void pulse_set_dualsense_mono_preferred_sink(const char *preferred)
- 
+@@ -429,28 +429,52 @@ static void pulse_set_dualsense_mono_preferred_sink(const char *preferred)
  static HRESULT pulse_retarget_dualsense_mono_stream(struct pulse_stream *stream, const char *preferred)
  {
 +    GUID target_container_id;
      char *dualsense_speaker;
-     const pa_buffer_attr *attr;
 +    BOOL target_container_valid;
-     HRESULT hr;
      int success;
+     HRESULT hr;
  
-     if (!stream->dualsense_mono_registered && !pulse_stream_dualsense_mono(stream))
+     if (!stream->dualsense_mono_stream && !stream->dualsense_mono_registered
+             && !pulse_stream_dualsense_mono(stream))
          return S_FALSE;
  
      if (!(dualsense_speaker = get_dualsense_speaker_sink(preferred, TRUE)))
 -        return E_FAIL;
 +        if (!(dualsense_speaker = get_dualsense_speaker_sink(NULL, TRUE)))
 +            return E_FAIL;
-+
+ 
 +    target_container_valid = pulse_get_device_container_id(dualsense_speaker,
 +            &target_container_id);
- 
-     pulse_set_dualsense_mono_preferred_sink(dualsense_speaker);
- 
++
 +    if (target_container_valid && stream->sony_controller_container_valid &&
 +            !IsEqualGUID(&stream->sony_controller_container_id, &target_container_id) &&
 +            pulse_container_is_present(&stream->sony_controller_container_id))
@@ -168,30 +165,38 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 +        return S_FALSE;
 +    }
 +
-     if (stream->device && !strcmp(stream->device, dualsense_speaker) && pulse_stream_ready(stream))
+     if (!strcmp(stream->device, dualsense_speaker))
+     {
+         if (pulse_stream_ready(stream))
+         {
+             TRACE("Skipping unchanged DualSense mono stream %p on %s.\n",
+                     stream, debugstr_a(dualsense_speaker));
++            if (target_container_valid)
++            {
++                stream->sony_controller_container_id = target_container_id;
++                stream->sony_controller_container_valid = TRUE;
++            }
+             stream->haptic_hotplug_generation = g_haptic_hotplug_generation;
+             stream->dualsense_mono_hotplug_generation = g_dualsense_mono_speaker_add_generation;
+             free(dualsense_speaker);
+             return S_OK;
+         }
+ 
+         free(dualsense_speaker);
+         return E_FAIL;
+     }
+@@ -471,5 +497,10 @@ static HRESULT pulse_retarget_dualsense_mono_stream(struct pulse_stream *stream, const char *preferred)
+     hr = pulse_stream_connect_dualsense_speaker(stream, stream->device, stream->period_bytes);
+     if (SUCCEEDED(hr))
      {
 +        if (target_container_valid)
 +        {
 +            stream->sony_controller_container_id = target_container_id;
 +            stream->sony_controller_container_valid = TRUE;
 +        }
-         stream->dualsense_mono_hotplug_generation = g_dualsense_mono_speaker_add_generation;
          stream->haptic_hotplug_generation = g_haptic_hotplug_generation;
-         free(dualsense_speaker);
-@@ -2942,6 +3015,12 @@ static HRESULT pulse_retarget_dualsense_mono_stream(struct pulse_stream *stream,
-     if ((attr = pa_stream_get_buffer_attr(stream->stream)))
-         stream->attr = *attr;
- 
-+    if (target_container_valid)
-+    {
-+        stream->sony_controller_container_id = target_container_id;
-+        stream->sony_controller_container_valid = TRUE;
-+    }
-+
-     stream->dualsense_mono_hotplug_generation = g_dualsense_mono_speaker_add_generation;
-     stream->haptic_hotplug_generation = g_haptic_hotplug_generation;
-     stream->just_underran = TRUE;
-@@ -4051,11 +4130,12 @@ static NTSTATUS pulse_create_stream(void *args)
+         stream->dualsense_mono_hotplug_generation = g_dualsense_mono_speaker_add_generation;
+@@ -4439,11 +4470,12 @@ static NTSTATUS pulse_create_stream(void *args)
      connect_device = params->device;
      if (dualsense_mono_candidate)
      {
@@ -209,8 +214,10 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
          if (dualsense_speaker)
              connect_device = dualsense_speaker;
      }
-@@ -4161,6 +4240,13 @@ static NTSTATUS pulse_create_stream(void *args)
-             stream->haptic_hotplug_generation = g_haptic_hotplug_generation;
+@@ -4554,8 +4586,15 @@ static NTSTATUS pulse_create_stream(void *args)
+             list_add_tail(&dualsense_haptic_streams, &stream->dualsense_haptic_entry);
+             stream->dualsense_haptic_registered = TRUE;
+         }
          if (dualsense_mono_candidate)
          {
 +            if (pulse_get_device_container_id(connect_device,
@@ -222,6 +229,6 @@ diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 +            }
              pulse_set_dualsense_mono_preferred_sink(connect_device);
  
-             stream->dualsense_mono_hotplug_generation = g_dualsense_mono_speaker_add_generation;
+             g_phys_lock();
 -- 
 2.55.0

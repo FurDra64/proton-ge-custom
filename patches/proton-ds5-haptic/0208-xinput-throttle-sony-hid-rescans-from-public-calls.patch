@@ -91,8 +91,8 @@ index 558f05b43c4..3250eeb1909 100644
      if (!controller_available(&controllers[index]))
          ret = is_persistent_player1(index) ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
      else if (WaitForSingleObject(steam_overlay_event, 0) == WAIT_OBJECT_0)
-@@ -1231,7 +1241,7 @@ static DWORD xinput_get_state(DWORD index, XINPUT_STATE *state)
-     if (sgi && (!strcmp(sgi, "298110") || !strcmp(sgi, "292030"))) goto done;
+@@ -1261,7 +1271,7 @@ static DWORD xinput_get_state(DWORD index, XINPUT_STATE *state)
+     if (ret == ERROR_SUCCESS) goto done;
  
      EnterCriticalSection(&xinput_cs);
 -    if (!controllers[index].device) update_controller_list();

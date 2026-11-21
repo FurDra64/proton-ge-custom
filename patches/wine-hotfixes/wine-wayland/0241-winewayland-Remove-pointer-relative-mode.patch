@@ -6,9 +6,9 @@ Subject: [PATCH 241/285] winewayland: Remove pointer relative mode.
 
 Windows always tracks an absolute pointer position.
 ---
- dlls/winewayland.drv/wayland_pointer.c | 34 ++++----------------------
+ dlls/winewayland.drv/wayland_pointer.c | 29 +++++---------------------
  dlls/winewayland.drv/waylanddrv.h      |  1 -
- 2 files changed, 5 insertions(+), 30 deletions(-)
+ 2 files changed, 5 insertions(+), 25 deletions(-)
 
 diff --git a/dlls/winewayland.drv/wayland_pointer.c b/dlls/winewayland.drv/wayland_pointer.c
 index 36dc5e45042..49e22afcfe4 100644
@@ -34,34 +34,28 @@ index 36dc5e45042..49e22afcfe4 100644
      static unsigned int once;
  
      if (!process_wayland.zwp_pointer_constraints_v1)
-@@ -1089,26 +1089,7 @@ static void wayland_pointer_update_constraint(struct wl_surface *wl_surface,
+@@ -1091,20 +1091,6 @@ static void wayland_pointer_update_constraint(struct wl_surface *wl_surface,
+             TRACE("Locking to hwnd=%p\n", pointer->constraint_hwnd);
          }
      }
  
--    if (!process_wayland.zwp_relative_pointer_manager_v1)
--    {
--        if (!once++)
--            ERR("zwp_relative_pointer_manager_v1 isn't supported, skipping relative motion\n");
--        return;
--    }
--
 -    needs_relative = !is_visible && pointer->constraint_hwnd &&
 -                     pointer->constraint_hwnd == pointer->focused_hwnd;
 -
--    if (needs_relative)
+-    if (needs_relative && !pointer->relative_mode && pointer->zwp_relative_pointer_v1)
 -    {
 -        pointer->relative_mode = TRUE;
+-        pointer->frame.dx = pointer->frame.dy = 0.0;
+-        pointer->frame.dx_raw = pointer->frame.dy_raw = 0.0;
 -        TRACE("Enabling relative motion\n");
 -    }
--    else if (!needs_relative)
+-    else if (!needs_relative && pointer->relative_mode)
 -    {
 -        pointer->relative_mode = FALSE;
 -        TRACE("Disabling relative motion\n");
 -    }
 +    TRACE("lock=%u confine=%u\n", needs_lock, needs_confine);
  }
- 
- void wayland_pointer_clear_constraint(void)
 @@ -1134,11 +1115,6 @@ BOOL WAYLAND_SetCursorPos(INT x, INT y)
      struct wayland_pointer *pointer = &process_wayland.pointer;
  
@@ -87,8 +81,7 @@ diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv
 index 0b4f2be6357..9f7501723bd 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
-@@ -161,7 +161,6 @@ struct wayland_pointer
-     HWND constraint_hwnd;
+@@ -166,6 +166,5 @@ struct wayland_pointer
      BOOL pending_warp;
      POINT warp;
 -    BOOL relative_mode;

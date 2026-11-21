@@ -14,35 +14,43 @@ new generation while the handle remains present, then let the existing PCM
 state and write-error checks detect a real controller disconnect.  Those paths
 still invalidate the old stream and never retarget it to another controller.
 ---
- dlls/winepulse.drv/pulse.c | 16 ++++++++++++----
- 1 file changed, 12 insertions(+), 4 deletions(-)
+ dlls/winepulse.drv/pulse.c | 17 ++++++++++++-----
+ 1 file changed, 12 insertions(+), 5 deletions(-)
 
 diff --git a/dlls/winepulse.drv/pulse.c b/dlls/winepulse.drv/pulse.c
 --- a/dlls/winepulse.drv/pulse.c
 +++ b/dlls/winepulse.drv/pulse.c
-@@ -2914,11 +2914,19 @@ static void pulse_haptic_invalidate(struct pulse_stream *stream, const char *rea
+@@ -3169,19 +3169,26 @@ static BOOL pulse_haptic_refresh_path(struct pulse_stream *stream)
+     if (stream->haptic_path_check_time && now < stream->haptic_path_check_time)
+         return stream->haptic_pcm != NULL;
  
- static BOOL pulse_haptic_refresh_path(struct pulse_stream *stream)
- {
--    if (stream->haptic_pcm && stream->haptic_hotplug_generation == g_haptic_hotplug_generation)
--        return TRUE;
-+    if (!stream->haptic_pcm)
-+    {
-+        TRACE("DualSense haptic stream has no open raw PCM.\n");
-+        return FALSE;
-+    }
+     if (stream->haptic_pcm && stream->haptic_hotplug_generation == g_haptic_hotplug_generation)
+         return TRUE;
+     if (!stream->haptic_pcm && stream->haptic_hotplug_generation == g_haptic_hotplug_generation)
+         return FALSE;
  
--    TRACE("DualSense haptic stream no longer matches the current device generation.\n");
--    return FALSE;
-+    if (stream->haptic_hotplug_generation != g_haptic_hotplug_generation)
++    /* The raw ALSA handle is authoritative once opened: adopt the new
++     * generation while it remains present so Pulse churn cannot invalidate
++     * a live PCM. A real disconnect is still caught by the PCM state and
++     * write-error checks elsewhere. */
++    if (stream->haptic_pcm)
 +    {
 +        TRACE("Keeping open DualSense haptic PCM across device generation %u -> %u.\n",
 +                stream->haptic_hotplug_generation, g_haptic_hotplug_generation);
 +        stream->haptic_hotplug_generation = g_haptic_hotplug_generation;
++        return TRUE;
 +    }
-+    return TRUE;
- }
++
+     stream->haptic_path_check_time = now + DUALSENSE_HAPTIC_REFRESH_USEC;
+     stream->haptic_hotplug_generation = g_haptic_hotplug_generation;
+-    if (stream->haptic_pcm)
+-    {
+-        snd_pcm_close(stream->haptic_pcm);
+-        stream->haptic_pcm = NULL;
+-    }
+     stream->haptic_reconnect_time = 0;
  
- static void pulse_haptic_advance(struct pulse_stream *stream, UINT32 frames, UINT32 frame_size)
--- 
+     if (!(alsa_path = find_dualsense_haptic_alsa_path()))
+         return FALSE;
+--
 2.55.0

@@ -308,9 +308,9 @@ index 563d1ee22d2..d4c3f33a6c1 100644
              InsertTailList( &completed, &irp->Tail.Overlay.ListEntry );
          }
          while (polled);
-@@ -447,17 +520,25 @@ struct completion_params
+@@ -445,17 +518,25 @@ struct completion_params
      HID_XFER_PACKET packet;
-     ULONG padding;
+     ULONG report_len;
      IRP *irp;
 +    struct phys_device *input_pdo;
  };
@@ -324,7 +324,7 @@ index 563d1ee22d2..d4c3f33a6c1 100644
      TRACE( "device %p, irp %p, context %p\n", device, irp, context );
  
      orig_irp->IoStatus = irp->IoStatus;
-     orig_irp->IoStatus.Information -= params->padding;
+     if (params->report_len) orig_irp->IoStatus.Information = params->report_len;
 +    if (params->input_pdo && orig_irp->IoStatus.Status == STATUS_SUCCESS && orig_irp->IoStatus.Information)
 +    {
 +        KeAcquireSpinLock( &params->input_pdo->lock, &irql );
@@ -452,10 +452,13 @@ index 25ddb68e4c1..8f804386e8c 100644
  static struct device *add_device( HKEY key, DWORD type )
  {
      static const WCHAR symbolic_linkW[] = {'S','y','m','b','o','l','i','c','L','i','n','k',0};
-@@ -287,6 +304,7 @@ static void rawinput_update_device_list( BOOL force )
-     unsigned int ticks = NtGetTickCount();
-     static unsigned int last_check;
+@@ -286,9 +286,10 @@ static void rawinput_update_device_list(void)
+ {
+     static const LARGE_INTEGER zero = { 0 };
      struct device *device, *next;
+     OBJECT_ATTRIBUTES attr;
+     IO_STATUS_BLOCK iosb;
+     NTSTATUS status;
 +    struct sony_consumer *consumer, *next_consumer;
  
      TRACE( "\n" );
@@ -627,13 +630,16 @@ index 1a06300c9de..222748df813 100644
  
      struct
      {
-@@ -121,9 +127,13 @@ static HMODULE xinput_instance;
+@@ -121,12 +127,16 @@ static HMODULE xinput_instance;
  static HANDLE start_event;
  static HANDLE update_event;
  static HANDLE steam_overlay_event;
 +static HANDLE steam_input_event;
 +static BOOL auto_sony_xinput;
 +static LONG steam_virtual_present;
+ 
+ static HKEY deviface_key;
+ static HANDLE key_changed_event;
  
  static SRWLOCK state_lock = SRWLOCK_INIT;
  static XINPUT_STATE current_state[XUSER_MAX_COUNT];
@@ -748,14 +754,13 @@ index 1a06300c9de..222748df813 100644
  
      memset(&controller->hid.read_ovl, 0, sizeof(controller->hid.read_ovl));
      controller->hid.read_ovl.hEvent = controller->read_event;
-@@ -592,19 +661,38 @@ static BOOL device_is_overridden(HANDLE device)
+@@ -598,18 +667,38 @@ static BOOL device_is_overridden(HANDLE device)
  }
  
  /* open a device with the given path at the given index, xinput_cs must be held */
 -static BOOL open_device_at_index(const WCHAR *device_path, int index)
 +static BOOL open_device_at_index(const WCHAR *device_path, int index, BOOL automatic)
  {
--    SP_DEVICE_INTERFACE_DATA iface = {sizeof(iface)};
 +    struct hid_xinput_fallback_registration registration;
 +    OVERLAPPED overlapped = {0};
      PHIDP_PREPARSED_DATA preparsed;
@@ -815,14 +820,13 @@ index 1a06300c9de..222748df813 100644
          *slot = i;
      }
  
-@@ -658,14 +750,20 @@ static BOOL find_opened_device(const WCHAR *device_path, int *slot)
+@@ -663,13 +755,20 @@ static BOOL find_opened_device(const WCHAR *device_path, int *slot)
  }
  
  /* try opening a new controller device from the given path, xinput_cs must be held */
 -static BOOL try_add_device(const WCHAR *device_path)
 +static BOOL try_add_device(const WCHAR *device_path, BOOL automatic)
  {
--    SP_DEVICE_INTERFACE_DATA iface = {sizeof(iface)};
      int i;
  
      if (find_opened_device(device_path, &i)) return TRUE; /* already opened */
@@ -968,8 +972,9 @@ index 1a06300c9de..222748df813 100644
          ret = is_persistent_player1(index) ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
      else if (WaitForSingleObject(steam_overlay_event, 0) == WAIT_OBJECT_0)
          ret = ERROR_SUCCESS;
-@@ -1079,7 +1220,7 @@ static DWORD xinput_get_state(DWORD index, XINPUT_STATE *state)
-     if (sgi && (!strcmp(sgi, "298110") || !strcmp(sgi, "292030"))) goto done;
+@@ -1106,8 +1247,8 @@ static DWORD xinput_get_state(DWORD index, XINPUT_STATE *state)
+     ret = get_current_state(index, state) ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
+     if (ret == ERROR_SUCCESS) goto done;
  
      EnterCriticalSection(&xinput_cs);
 -    update_controller_list();
@@ -1013,14 +1018,17 @@ index 1a06300c9de..222748df813 100644
      LeaveCriticalSection(&xinput_cs);
  
      return ret;
-@@ -1450,7 +1591,7 @@ DWORD WINAPI DECLSPEC_HOTPATCH XInputGetCapabilitiesEx(DWORD unk, DWORD index, D
+@@ -1478,10 +1619,10 @@ DWORD WINAPI DECLSPEC_HOTPATCH XInputGetCapabilitiesEx(DWORD unk, DWORD index, D
          attr.ProductID = 0x028e;
          attr.VersionNumber = 0x0114;
      }
--    else if (!controllers[index].device || !HidD_GetAttributes(controllers[index].device, &attr))
+     else if (!controllers[index].device)
+         ret = ERROR_DEVICE_NOT_CONNECTED;
+     else if (flags & XINPUT_FLAG_GAMEPAD && controllers[index].caps.SubType != XINPUT_DEVSUBTYPE_GAMEPAD)
+         ret = ERROR_DEVICE_NOT_CONNECTED;
+-    else if (!HidD_GetAttributes(controllers[index].device, &attr))
 +    else if (!controller_available(&controllers[index]) || !HidD_GetAttributes(controllers[index].device, &attr))
          ret = ERROR_DEVICE_NOT_CONNECTED;
- 
      if (ret == ERROR_SUCCESS)
 diff --git a/include/wine/hid.h b/include/wine/hid.h
 index cb31bd6e5a5..d20c6ce5068 100644
