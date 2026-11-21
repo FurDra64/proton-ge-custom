@@ -38,9 +38,9 @@ index a2ed320a886..9c2f7512a22 100644
          {
 -            if (toplevel && is_client_visible(hwnd))
 +            if (toplevel && visible)
-                 wayland_client_surface_attach(new_client, toplevel);
+                 wayland_client_surface_attach(new_client, toplevel, &new_client->client.monitor_rect);
              else
-                 wayland_client_surface_attach(new_client, NULL);
+                 wayland_client_surface_attach(new_client, NULL, NULL);
 -- 
 2.55.0
 

@@ -5,16 +5,18 @@ Date: Thu, 2 Jul 2026 02:22:00 -0400
 Subject: [PATCH 173/285] winewayland: Use present rect to check for exclusive
  fullscreen.
 
+Retarget the move and visibility checks to the monitor-rect attach API.
+
 ---
- dlls/winewayland.drv/wayland_surface.c | 48 +++++++++++++++++++++++---
- dlls/winewayland.drv/window.c          | 28 ---------------
- 2 files changed, 43 insertions(+), 33 deletions(-)
+ dlls/winewayland.drv/wayland_surface.c | 48 ++++++++++++++++++++++++++++++----
+ dlls/winewayland.drv/window.c          | 30 ---------------------
+ 2 files changed, 43 insertions(+), 35 deletions(-)
 
 diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayland_surface.c
-index 3e06636072e..eae3d1274a1 100644
+index e9559e01bb0c7346e94632860677c6a18a82233d..64d30805d5b21e0dc2c529c59baa0b661eac65be 100644
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
-@@ -1381,6 +1381,12 @@ static void wayland_client_surface_detach(struct client_surface *client)
+@@ -1759,6 +1759,12 @@ static void wayland_client_surface_detach(struct client_surface *client)
      }
  }
  
@@ -27,16 +29,16 @@ index 3e06636072e..eae3d1274a1 100644
  static void wayland_client_surface_update(struct client_surface *client)
  {
      struct wayland_client_surface *surface = impl_from_client_surface(client);
-@@ -1391,7 +1397,7 @@ static void wayland_client_surface_update(struct client_surface *client)
+@@ -1767,7 +1773,7 @@ static void wayland_client_surface_update(struct client_surface *client)
+
+     TRACE("%s\n", debugstr_client_surface(client));
  
-     if (!(data = wayland_win_data_get(hwnd))) return;
+-    if (toplevel) visible = NtUserIsWindowVisible(hwnd);
++    if (toplevel) visible = is_client_visible(hwnd);
  
--    if (toplevel && NtUserIsWindowVisible(hwnd))
-+    if (toplevel && is_client_visible(hwnd))
-         wayland_client_surface_attach(surface, toplevel);
-     else
-         wayland_client_surface_attach(surface, NULL);
-@@ -1417,17 +1423,21 @@ static const struct wl_buffer_listener dummy_buffer_listener =
+     if (toplevel && visible)
+         wayland_client_surface_attach(surface, toplevel, &client->monitor_rect);
+@@ -1793,17 +1799,21 @@ static const struct wl_buffer_listener dummy_buffer_listener =
   * Ensure that the wayland surface has up-to-date contents, by committing
   * a dummy buffer if necessary.
   */
@@ -61,7 +63,7 @@ index 3e06636072e..eae3d1274a1 100644
      /* overwrite the window contents with a transparent buffer for a few reasons:
       * 1. fullscreen window black background
       * 2. avoid alpha blending between client surface and toplevel */
-@@ -1490,7 +1500,7 @@ static void wayland_client_surface_present(struct client_surface *client, HDC hd
+@@ -1866,7 +1876,7 @@ static void wayland_client_surface_present(struct client_surface *client, HDC hd
  
      if ((wayland_surface = data->wayland_surface))
      {
@@ -70,8 +72,8 @@ index 3e06636072e..eae3d1274a1 100644
  
          /* Handle any processed configure request, to ensure the related
           * surface state is applied by the compositor. */
-@@ -1507,6 +1517,34 @@ static void wayland_client_surface_present(struct client_surface *client, HDC hd
-     set_client_surface(hwnd, surface);
+@@ -1922,6 +1932,34 @@ static BOOL wayland_client_surface_set_color_space(struct client_surface *client
+     return desc || color_space == -1;
  }
  
 +void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
@@ -88,14 +90,14 @@ index 3e06636072e..eae3d1274a1 100644
 +    if (new_client != data->client_surface)
 +    {
 +        if ((old_client = data->client_surface))
-+            wayland_client_surface_attach(old_client, NULL);
++            wayland_client_surface_attach(old_client, NULL, NULL);
 +
 +        if ((data->client_surface = new_client))
 +        {
 +            if (toplevel && is_client_visible(hwnd))
-+                wayland_client_surface_attach(new_client, toplevel);
++                wayland_client_surface_attach(new_client, toplevel, &new_client->client.monitor_rect);
 +            else
-+                wayland_client_surface_attach(new_client, NULL);
++                wayland_client_surface_attach(new_client, NULL, NULL);
 +        }
 +    }
 +
@@ -104,37 +106,39 @@ index 3e06636072e..eae3d1274a1 100644
 +
  static const struct client_surface_funcs wayland_client_surface_funcs =
  {
-     .destroy = wayland_client_surface_destroy,
+     .size = sizeof(struct wayland_client_surface),
 diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
-index 66f00fddffb..7ea21d7802a 100644
+index b046087a85406a583cf1a8788249e50161234292..1eea13d9d22ee59e92ff786a7bfbad27c3cf7fa1 100644
 --- a/dlls/winewayland.drv/window.c
 +++ b/dlls/winewayland.drv/window.c
-@@ -917,34 +917,6 @@ BOOL WAYLAND_GetWindowStyleMasks(HWND hwnd, UINT style, UINT ex_style, UINT *sty
+@@ -1133,36 +1133,6 @@ BOOL WAYLAND_GetWindowStyleMasks(HWND hwnd, UINT style, UINT ex_style, UINT *sty
      return ret;
  }
  
 -void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
 -{
--    HWND toplevel = NtUserGetAncestor(hwnd, GA_ROOT);
+-    HWND toplevel = new_client->client.toplevel;
+-    RECT rect = new_client->client.monitor_rect;
 -    struct wayland_client_surface *old_client;
 -    struct wayland_win_data *data;
+-    BOOL visible = FALSE;
 -
 -    /* ownership is shared with the callers, the last caller to release
 -     * its reference will also destroy it and clear our pointer. */
--
+-    if(toplevel) visible = NtUserIsWindowVisible(hwnd);
 -    if (!(data = wayland_win_data_get(hwnd))) return;
 -
 -    if (new_client != data->client_surface)
 -    {
 -        if ((old_client = data->client_surface))
--            wayland_client_surface_attach(old_client, NULL);
+-            wayland_client_surface_attach(old_client, NULL, NULL);
 -
 -        if ((data->client_surface = new_client))
 -        {
--            if (toplevel && NtUserIsWindowVisible(hwnd))
--                wayland_client_surface_attach(new_client, toplevel);
+-            if (toplevel && visible)
+-                wayland_client_surface_attach(new_client, toplevel, &rect);
 -            else
--                wayland_client_surface_attach(new_client, NULL);
+-                wayland_client_surface_attach(new_client, NULL, NULL);
 -        }
 -    }
 -
@@ -146,4 +150,3 @@ index 66f00fddffb..7ea21d7802a 100644
      struct wayland_surface *wayland_surface;
 -- 
 2.55.0
-

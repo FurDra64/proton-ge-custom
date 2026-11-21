@@ -22,7 +22,7 @@ index 3cb43a0d524..ad39bcfd229 100644
  
      TRACE("%s\n", debugstr_client_surface(client));
  
--    if (toplevel) visible = NtUserIsWindowVisible(hwnd);
+-    if (toplevel) visible = is_client_visible(hwnd);
 -
 -    if (toplevel && visible)
 -        wayland_client_surface_attach(surface, toplevel, &client->monitor_rect);
@@ -34,14 +34,14 @@ index 3cb43a0d524..ad39bcfd229 100644
  static void dummy_buffer_release(void *data, struct wl_buffer *buffer)
 @@ -3008,13 +2998,15 @@ void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
          if ((old_client = data->client_surface))
-             wayland_client_surface_attach(old_client, NULL);
+             wayland_client_surface_attach(old_client, NULL, NULL);
  
 -        if ((data->client_surface = new_client))
 -        {
 -            if (toplevel && visible)
--                wayland_client_surface_attach(new_client, toplevel);
+-                wayland_client_surface_attach(new_client, toplevel, &new_client->client.monitor_rect);
 -            else
--                wayland_client_surface_attach(new_client, NULL);
+-                wayland_client_surface_attach(new_client, NULL, NULL);
 -        }
 +        data->client_surface = new_client;
 +    }
@@ -49,9 +49,9 @@ index 3cb43a0d524..ad39bcfd229 100644
 +    if (data->client_surface)
 +    {
 +        if (toplevel && is_client_visible(hwnd))
-+            wayland_client_surface_attach(data->client_surface, toplevel);
++            wayland_client_surface_attach(data->client_surface, toplevel, &data->client_surface->client.monitor_rect);
 +        else
-+            wayland_client_surface_attach(data->client_surface, NULL);
++            wayland_client_surface_attach(data->client_surface, NULL, NULL);
      }
  
      wayland_win_data_release(data);

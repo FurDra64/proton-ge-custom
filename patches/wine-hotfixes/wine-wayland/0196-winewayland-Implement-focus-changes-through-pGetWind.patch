@@ -184,4 +184,4 @@ index 3a7125c9e28..238091087ec 100644
 +    return TRUE;
 +}
 +
- void set_client_surface(HWND hwnd, struct wayland_client_surface *new_client)
+ BOOL set_window_surface_contents(HWND hwnd, struct wayland_shm_buffer *shm_buffer, HRGN damage_region)
