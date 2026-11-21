@@ -105,14 +105,12 @@ index 04da7f3854cf2a8a4a892639acaced661f07e9fb..abaf1d31abd0dd7b5359643ba2d8c7c0
          SIZE_T size;
  
          stream->attr = *attr;
-@@ -3123,6 +3146,6 @@ static void pa_streams_timer_cb(pa_mainloop_api *api, pa_time_event *e, const st
+@@ -3266,4 +3266,4 @@ static void pa_streams_timer_cb(pa_mainloop_api *api, pa_time_event *e, const st
  {
      struct pulse_period *period = userdata;
 -    struct pulse_stream *stream;
 +    struct pulse_stream *stream, *next;
-     UINT32 adv_bytes;
- 
-     period->timer_last_time += period->period;
+     BOOL reset_timeline = FALSE;
 @@ -3129,5 +3152,5 @@ static void pa_streams_timer_cb(pa_mainloop_api *api, pa_time_event *e, const st
  
 -    LIST_FOR_EACH_ENTRY(stream, &period->streams, struct pulse_stream, period_entry)
