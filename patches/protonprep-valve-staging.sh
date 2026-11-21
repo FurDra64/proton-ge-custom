@@ -717,7 +717,6 @@ fi
 
 
     echo "WINE: -HOTFIX- Implement GE-Proton ffmpeg + winedmo only video playback rework patches"
-    apply_all_in_dir "../patches/ge-video-rework/"
 
     # https://github.com/xzn/proton-ds5-haptic
     # Includes default VitaPad-to-DS4 translation (issue #691).

@@ -34,7 +34,6 @@ apply_all_in_dir() {
     apply_patch "../patches/wine-hotfixes/pending/0001-decouple-wineopenxr-from-steamvr-and-integrate-it-in.patch"
 
     echo "WINE: -HOTFIX- Implement GE-Proton ffmpeg + winedmo only video playback rework patches"
-    apply_all_in_dir "../patches/ge-video-rework/"
 
 
     echo "WINE: RUN AUTOCONF TOOLS/MAKE_REQUESTS"
