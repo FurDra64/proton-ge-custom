@@ -68,10 +68,10 @@ index 9eb472a8f61..f551906ac54 100644
      HRESULT hr;
  
      hr = CoInitialize(NULL);
-@@ -5873,6 +5873,7 @@ static void test_h264_decoder_alignment(BOOL input_frame_size, const GUID *subty
-     hr = IMFMediaType_GetUINT64(output_type, &MF_MT_FRAME_SIZE, &frame_size);
+@@ -5874,6 +5874,7 @@ static void test_h264_decoder_alignment(BOOL input_frame_size, const GUID *subty
      ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
-     ok(frame_size == (((UINT64)actual_width << 32) | actual_height), "Unexpected frame size %#I64x\n", frame_size);
+     ok(frame_size == (input_frame_size ? (((UINT64)actual_width << 32) | actual_height)
+             : (((UINT64)1920 << 32) | 1080)), "Unexpected frame size %#llx\n", frame_size);
 +    initial_frame_size = frame_size;
  
      hr = IMFTransform_SetOutputType(transform, 0, output_type, 0);
