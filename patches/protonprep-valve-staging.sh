@@ -310,31 +310,29 @@ fi
     -W server-File_Permissions \
     -W kernel32-CopyFileEx \
     -W dbghelp-Debug_Symbols \
+    -W dcomp-DCompositionCreateDevice2 \
+    -W winecfg-Staging \
+    -W winepulse-PulseAudio_Support \
     -W version-VerQueryValue \
     -W mf_http_support \
     -W ntdll-Serial_Port_Detection \
     -W server-PeekMessage \
     -W msxml3-FreeThreadedXMLHTTP60 \
-    -W ntdll-ForceBottomUpAlloc \
     -W ntdll-NtDevicePath \
-    -W user32-rawinput-mouse \
     -W user32-recursive-activation \
     -W d3dx9_36-D3DXStubs \
     -W wined3d-zero-inf-shaders \
     -W ntdll-RtlQueryPackageIdentity \
     -W vkd3d-latest \
     -W loader-KeyboardLayouts \
-    -W ntdll-Syscall_Emulation \
-    -W ntdll_reg_flush \
     -W ntdll-Hide_Wine_Exports \
     -W kernel32-Debugger \
     -W ntdll-ext4-case-folder \
     -W winex11-Window_Style \
     -W wininet-Cleanup \
-    -W wintrust-WTHelperGetProvCertFromChain \
-    -W winex11-ime-check-thread-data \
-    -W winex11-Fixed-scancodes \
     -W winedevice-Default_Drivers \
+    -W odbc32-fixes \
+    -W ws2_32-af_unix \
     -W Staging
 
     # Manual sets use GE-rebased copies where their context overlaps our earlier patches.
@@ -354,18 +352,13 @@ fi
 
     # server-PeekMessage - already applied
     # msxml3-FreeThreadedXMLHTTP60 - already applied
-    # ntdll-ForceBottomUpAlloc - already applied
     # ntdll-NtDevicePath - already applied
-    # user32-rawinput-mouse - already applied
     # user32-recursive-activation - already applied
     # d3dx9_36-D3DXStubs - already applied
     # wined3d-zero-inf-shaders - already applied
     # ntdll-RtlQueryPackageIdentity - already applied
     # vkd3d-latest - already applied
     # loader-KeyboardLayouts - already applied
-    # ntdll-Syscall_Emulation - already applied
-    # ntdll_reg_flush - already applied
-    # wintrust-WTHelperGetProvCertFromChain - already applied by Wine upstream
 
     # ntdll-Hide_Wine_Exports - applied manually
     # kernel32-Debugger - applied manually
@@ -376,6 +369,28 @@ fi
     # winex11-ime-check-thread-data - applied manually, needed rebase
     # winex11-Fixed-scancodes - applied manually, needed rebase
     # winedevice-Default_Drivers - applied manually, tests rebased onto upstream ntoskrnl changes
+    #
+    # v11.21 notes (staging bump to 04414fee): the following sets no longer exist
+    # upstream or are Disabled in their definition, so passing them to -W would
+    # KeyError in patchinstall.py (`del patchlist[p]`): user32-rawinput-mouse,
+    # ntdll-Syscall_Emulation, ntdll_reg_flush, wintrust-WTHelperGetProvCertFromChain,
+    # winex11-ime-check-thread-data (dir gone; the GE-rebased copy below is kept),
+    # ntdll-ForceBottomUpAlloc + winex11-Fixed-scancodes (now Disabled: true).
+    # odbc32-fixes / ws2_32-af_unix / dcomp-DCompositionCreateDevice2 are -W'd:
+    # odbc32 0012 upstream-absorbed into proxyodbc.c, odbc32 0017 + ws2 0001/0009
+    # drift on wine 11.21; ws2 0002 core collides with proton's own
+    # ge-pending-ws2_32-validate-connect-address (0003-0008 orphans without it);
+    # dcomp 0062 is a protocol.def EOF-append colliding with proton's
+    # child-rendering dmabuf tail (0065 removes 0062's test). The still-applying
+    # patches are applied manually below.
+    # winecfg-Staging is -W'd with no manual: all 5 patches collide with proton's own
+    # ge-staging-winex11-fixed-scancodes (wine-owned, pre-staging) which already moved
+    # input config to a dedicated tab (NUM_PROPERTY_PAGES 7->8 done there); the set's
+    # CSMT-tab/vaapi/EAX/GTK3 UI deltas need a retarget, separate card.
+    # winepulse-PulseAudio_Support is -W'd with no manual: its pulse_ml->ml hunks
+    # target busy-wait loops our own ge-ds5-haptic/0022 already replaced with
+    # pulse_stream_wait_until_not (bounded probes); a retarget must re-thread ml/ctx
+    # through the new abstraction, separate audio card.
 
     # winex11-WM_WINDOWPOSCHANGING - Causes origin to freeze -- currently also disabled in upstream staging
     # ntdll-Junction_Points - breaks CEG drm -- currently also disabled in upstream staging
@@ -402,6 +417,98 @@ fi
     apply_patch "../wine-staging/patches/wininet-Cleanup/0003-wininet-tests-Check-cookie-behaviour-when-overriding.patch"
     apply_patch "../wine-staging/patches/wininet-Cleanup/0004-wininet-Strip-filename-if-no-path-is-set-in-cookie.patch"
 
+    # odbc32-fixes is -W'd above (0012 upstream-absorbed, 0017 drifts), but the
+    # rest of the set still applies on wine 11.21 -- verified with git apply
+    # --check in series order. Skipped: 0012 (upstream absorbed the ANSI
+    # fallback into describe_col_win32_w), 0017 (context drift).
+    echo "WINE: -STAGING- odbc32-fixes manually applied (minus 0012/0017)"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0001-odbc32-Load-function-pointer-for-SQLBindParam.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0002-odbc32-SQLBindParameter-handle-fallback-function.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0003-odbc32-SQLSetConnectAttr-W-handle-fallback-function.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0005-odbc32-SQLGetData-support-ODBC-v2.0.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0007-odbc32-SQLSetStmtAttrW-support-fallback-for-ODBC-v2..patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0008-odbc32-SQLColAttributes-W-fall-throught-for-unknown-.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0013-odbc32-SQLGetStmtAttrW-add-ANSI-fallback.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0014-odbc32-SQLSetStmtAttrW-add-ANSI-fallback.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0015-odbc32-Various-ANSI-fallback.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0016-odbc32-SQLColAttributesW-support-ANSI-fallback.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0018-odbc32-SQLGetDiagRecW-add-ANSI-fallback.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0019-odbc32-SQLNativeSqlW-add-ANSI-fallback.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0020-odbc32-SQLPrepareW-add-ANSI-fallback.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0022-odbc32-SQLBindCol-remap-unicode-field-when-using-ANS.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0023-odbc32-SQLFetch-convert-to-ANSI-when-required.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0024-odbc-SQLGetDescField-passthrough-correct-values-to-u.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0025-odbc32-SQLSetStmtOption-support-option-SQL_ROWSET_SI.patch"
+    apply_patch "../wine-staging/patches/odbc32-fixes/0026-odbc32-SQLSetConnectOption-Add-function-fallbacks.patch"
+
+    # ws2_32-af_unix is -W'd above (0001 + 0009 drift on server/fd.c), but
+    # 0002-0008 still apply in series order without them.
+    echo "WINE: -STAGING- dcomp-DCompositionCreateDevice2 manually applied (minus 0062/0065)"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0001-HACK-dxgi-Add-a-dxgi_factory_CreateSwapChainForComposi.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0002-dcomp-tests-Add-DCompositionCreateDevice-tests.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0003-dcomp-Add-IDCompositionDevice-stub.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0004-dcomp-tests-Add-DCompositionCreateDevice2-tests.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0005-dcomp-Add-IDCompositionDevice2-stub.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0006-dcomp-Add-IDCompositionDesktopDevice-stub.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0007-dcomp-tests-Add-CreateTargetForHwnd-tests.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0008-dcomp-Add-IDCompositionTarget-stub.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0009-dcomp-tests-Add-IDCompositionDevice-CreateVisual-tests.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0010-dcomp-Add-IDCompositionVisual-stub.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0011-dcomp-Add-IDCompositionVisual2-stub.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0012-dcomp-tests-Add-IDCompositionVisual-SetContent-tests.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0013-dcomp-Implement-IDCompositionVisual-SetContent.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0014-dcomp-tests-Add-IDCompositionTarget-SetRoot-tests.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0015-dcomp-Implement-IDCompositionTarget-SetRoot.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0016-dcomp-tests-Add-IDCompositionDevice-Commit-tests.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0017-dcomp-Implement-IDCompositionDevice-Commit.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0018-dcomp-Add-DCompositionCreateSharedVisualHandle-stub.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0019-dcomp-tests-Add-tests-for-DCompositionCreateSharedVisu.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0020-dcomp-tests-Add-tests-for-DCompositionWaitForComposito.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0021-dcomp-tests-Add-DCompositionCreateDevice3-tests.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0022-dcomp-Implement-DCompositionCreateDevice3.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0023-dcomp-Add-IDCompositionDesktopDevicePartner-stub.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0024-dcomp-Add-IDCompositionDesktopDevicePartner-tests.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0025-dcomp-Implement-desktop_device_Unknown1.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0026-dcomp-tests-Add-tests-for-IDCompositionDesktopDevicePa.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0027-dcomp-Add-IDCompositionVisualUnknown-stub.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0028-dcomp-tests-Add-tests-for-IDCompositionVisualUnknown.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0029-dcomp-Return-S_OK-for-visual_unknown_method19.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0030-dcomp-tests-Add-tests-for-IDCompositionVisualUnknown-U.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0031-dcomp-Return-S_OK-for-visual_unknown_method20.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0032-dcomp-tests-Add-tests-for-IDCompositionVisualUnknown-U.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0033-dcomp-Add-IDCompositionDeviceUnknown-stub.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0034-dcomp-tests-Add-tests-for-IDCompositionDeviceUnknown.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0035-dcomp-Add-desktop_device_Unknown17-stub.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0036-dcomp-tests-Add-tests-for-desktop_device_Unknown17.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0037-dcomp-Add-desktop_device_Unknown16-stub.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0038-dcomp-tests-Add-tests-for-desktop_device_Unknown16.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0039-dcomp-Implement-some-visual-methods.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0040-dcomp-Return-S_OK-for-visual_unknown_method14.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0041-dcomp-tests-Add-tests-for-IDCompositionVisualUnknown_U.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0042-dcomp-tests-Add-visual_SetOffsetX-tests.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0043-dcomp-Implement-visual_SetOffsetX.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0044-dcomp-tests-Add-visual_SetOffsetXAnimation-tests.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0045-dcomp-tests-Remove-succeeding-todo_wine.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0046-dcomp-tests-Add-tests-for-IDCompositionDevice2-CreateS.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0047-dcomp-Implement-desktop_device_CreateSurfaceFactory.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0048-dcomp-tests-Add-tests-for-IDCompositionSurfaceFactory-.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0049-dcomp-Implement-factory_CreateSurface-for-dxgi-renderi.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0050-dcomp-tests-Add-tests-for-IDCompositionVisual-SetConte.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0051-dcomp-Accept-IDCompositionSurface-in-visual_SetContent.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0052-dcomp-tests-Add-IDCompositionSurface-Begin-EndDraw-tes.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0053-dcomp-tests-Add-tests-for-committing-visual-content-of.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0054-dcomp-Implement-surface_Begin-EndDraw.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0055-dcomp-Implement-composition-for-IDCompositionSurface.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0056-dcomp-Implement-child-visual-composition.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0057-dcomp-tests-Test-rendering-with-child-visuals.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0058-dcomp-tests-Test-rendering-more-surface-formats.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0059-dcomp-Implement-DXGI_FORMAT_R8G8B8A8_UNORM-surface-con.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0060-dcomp-Use-a-global-lock.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0061-dcomp-Protect-d3d11-device-states-from-multithread-acc.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0063-dcomp-Implement-IDCompositionSurfaceUnknown-Unknown3.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0064-dcomp-tests-Add-tests-for-IDCompositionSurfaceUnknown-.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0066-dcomp-Always-use-the-front-buffer.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0067-dcomp-Allow-IDCompositionDevice3-interface.patch"
     echo "WINE: -STAGING- Staging manually applied"
     apply_all_in_dir "../wine-staging/patches/Staging/"
 
