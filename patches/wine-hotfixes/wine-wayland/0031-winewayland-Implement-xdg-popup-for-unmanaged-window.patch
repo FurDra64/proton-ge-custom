@@ -188,7 +188,7 @@ index f91cff04354..14a5c3473e9 100644
  }
  
  static const struct wp_fractional_scale_v1_listener wp_fractional_scale_listener =
-@@ -575,50 +648,97 @@ err:
+@@ -575,48 +648,95 @@ err:
      ERR("Failed to assign toplevel role to wayland surface\n");
  }
  
@@ -273,9 +273,7 @@ index f91cff04354..14a5c3473e9 100644
 +
      wayland_surface_init_fractional_scale(surface, owner->window.scale);
  
-     wayland_surface_init_fractional_scale(surface, parent->window.scale);
 +    rect = map_rect_to_surface(surface, rect);
- 
 -    surface->role = WAYLAND_SURFACE_ROLE_SUBSURFACE;
 -    surface->owner_hwnd = owner->hwnd;
 +    surface->xdg_surface = xdg_wm_base_get_xdg_surface(process_wayland.xdg_wm_base,
