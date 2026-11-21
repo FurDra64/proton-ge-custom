@@ -525,8 +525,10 @@ fi
     echo "WINE: -STAGING- windowscodecs-TIFF_Support cleanup -Werror"
     apply_all_in_dir "../patches/wine-hotfixes/wine-staging/windowscodecs-TIFF_Support/"
 
-    echo "WINE: -STAGING- mmsystem.dll16-MIDIHDR_Refcount cleanup -Werror"
-    apply_all_in_dir "../patches/wine-hotfixes/wine-staging/mmsystem.dll16-MIDIHDR_Refcount/"
+    # mmsystem.dll16-MIDIHDR_Refcount -Werror fixup is staging-absorbed
+    # (wine-staging a50a45c7 "Updated mmsystem.dll16-MIDIHDR_Refcount patchset"
+    # moved the ERR format itself from %d to %lu inside premise 0001).
+    # Patch deleted; wiring removed.
 
 
 ### END WINE STAGING APPLY SECTION ###
