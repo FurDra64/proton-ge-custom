@@ -815,8 +815,8 @@ index 455e090512c..4e3c3d04d03 100644
  };
  
  /* increment this when you change the DC function table */
--#define WINE_GDI_DRIVER_VERSION 110
-+#define WINE_GDI_DRIVER_VERSION 111
+-#define WINE_GDI_DRIVER_VERSION 111
++#define WINE_GDI_DRIVER_VERSION 112
  
  #define GDI_PRIORITY_NULL_DRV        0  /* null driver */
  #define GDI_PRIORITY_FONT_DRV      100  /* any font driver */
