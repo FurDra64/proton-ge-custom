@@ -381,16 +381,17 @@ fi
     # drift on wine 11.21; ws2 0002 core collides with proton's own
     # ge-pending-ws2_32-validate-connect-address (0003-0008 orphans without it);
     # dcomp 0062 is a protocol.def EOF-append colliding with proton's
-    # child-rendering dmabuf tail (0065 removes 0062's test). The still-applying
-    # patches are applied manually below.
-    # winecfg-Staging is -W'd with no manual: all 5 patches collide with proton's own
-    # ge-staging-winex11-fixed-scancodes (wine-owned, pre-staging) which already moved
-    # input config to a dedicated tab (NUM_PROPERTY_PAGES 7->8 done there); the set's
-    # CSMT-tab/vaapi/EAX/GTK3 UI deltas need a retarget, separate card.
-    # winepulse-PulseAudio_Support is -W'd with no manual: its pulse_ml->ml hunks
-    # target busy-wait loops our own ge-ds5-haptic/0022 already replaced with
-    # pulse_stream_wait_until_not (bounded probes); a retarget must re-thread ml/ctx
-    # through the new abstraction, separate audio card.
+    # child-rendering dmabuf tail (0065 removes 0062's test). The full set is
+    # applied manually below: 0062 via a GE retarget re-anchored to the
+    # hwnd_dmabuf tail, 0065 verbatim (t_28bb002b).
+    # winecfg-Staging is -W'd, all 5 applied manually below: 0001 is a GE
+    # retarget (CSMT tab appended after proton's own Input tab,
+    # NUM_PROPERTY_PAGES 8->9; proton's ge-staging-winex11-fixed-scancodes
+    # already did 7->8), 0002-0005 verbatim (t_28bb002b).
+    # winepulse-PulseAudio_Support is -W'd, its single patch applied manually
+    # below as a GE retarget: the global-based probe is deleted and ml/ctx
+    # re-threaded through pulse_probe_settings_on_ctx (bounded waits from
+    # our own ge-ds5-haptic/0022 kept, t_28bb002b).
 
     # winex11-WM_WINDOWPOSCHANGING - Causes origin to freeze -- currently also disabled in upstream staging
     # ntdll-Junction_Points - breaks CEG drm -- currently also disabled in upstream staging
@@ -443,7 +444,12 @@ fi
 
     # ws2_32-af_unix is -W'd above (0001 + 0009 drift on server/fd.c), but
     # 0002-0008 still apply in series order without them.
-    echo "WINE: -STAGING- dcomp-DCompositionCreateDevice2 manually applied (minus 0062/0065)"
+    # dcomp-DCompositionCreateDevice2 is -W'd above (kept: patchinstall runs
+    # before this manual section, and upstream 0062's protocol.def hunk still
+    # targets the pre-child-rendering tail). The full set is applied manually:
+    # 0062 is a GE retarget re-anchored to the hwnd_dmabuf tail (t_28bb002b),
+    # 0065 (which deletes 0062's test) applies verbatim after it.
+    echo "WINE: -STAGING- dcomp-DCompositionCreateDevice2 manually applied (0062 GE-retargeted)"
     apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0001-HACK-dxgi-Add-a-dxgi_factory_CreateSwapChainForComposi.patch"
     apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0002-dcomp-tests-Add-DCompositionCreateDevice-tests.patch"
     apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0003-dcomp-Add-IDCompositionDevice-stub.patch"
@@ -505,10 +511,31 @@ fi
     apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0059-dcomp-Implement-DXGI_FORMAT_R8G8B8A8_UNORM-surface-con.patch"
     apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0060-dcomp-Use-a-global-lock.patch"
     apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0061-dcomp-Protect-d3d11-device-states-from-multithread-acc.patch"
+    apply_patch "../patches/wine-hotfixes/wine-staging/dcomp-DCompositionCreateDevice2/0062-dcomp-Implement-shared-visual-handle-for-the-same-proc-GE-retarget.patch"
     apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0063-dcomp-Implement-IDCompositionSurfaceUnknown-Unknown3.patch"
     apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0064-dcomp-tests-Add-tests-for-IDCompositionSurfaceUnknown-.patch"
     apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0066-dcomp-Always-use-the-front-buffer.patch"
     apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0067-dcomp-Allow-IDCompositionDevice3-interface.patch"
+    apply_patch "../wine-staging/patches/dcomp-DCompositionCreateDevice2/0065-dcomp-Remove-tests-involving-checking-the-stack.patch"
+    # winecfg-Staging is -W'd above (kept: patchinstall runs before this
+    # manual section, and upstream 0001's tab block collides with proton's own
+    # ge-staging-winex11-fixed-scancodes/0001 Input tab). All 5 are applied
+    # manually: 0001 is a GE retarget (staging tab after Input page, 8->9,
+    # t_28bb002b), 0002-0005 apply verbatim on top of it.
+    echo "WINE: -STAGING- winecfg-Staging manually applied (0001 GE-retargeted)"
+    apply_patch "../patches/wine-hotfixes/wine-staging/winecfg-Staging/0001-winecfg-Add-staging-tab-for-CSMT-GE-retarget.patch"
+    apply_patch "../wine-staging/patches/winecfg-Staging/0002-winecfg-Add-checkbox-to-enable-disable-vaapi-GPU-dec.patch"
+    apply_patch "../wine-staging/patches/winecfg-Staging/0003-winecfg-Add-checkbox-to-enable-disable-EAX-support.patch"
+    apply_patch "../wine-staging/patches/winecfg-Staging/0004-winecfg-Add-checkbox-to-enable-disable-HideWineExpor.patch"
+    apply_patch "../wine-staging/patches/winecfg-Staging/0005-winecfg-Add-option-to-enable-disable-GTK3-theming.patch"
+    # winepulse-PulseAudio_Support is -W'd above (kept: patchinstall runs
+    # before this manual section, and upstream 0001's pulse_ml hunks target
+    # busy-wait loops our own ge-ds5-haptic/0022 already replaced with
+    # pulse_stream_wait_until_not). The single patch is a GE retarget that
+    # deletes the global-based probe and re-threads ml/ctx through
+    # pulse_probe_settings_on_ctx (t_28bb002b, audio semantics verified).
+    echo "WINE: -STAGING- winepulse-PulseAudio_Support manually applied (0001 GE-retargeted)"
+    apply_all_in_dir "../patches/wine-hotfixes/wine-staging/winepulse-PulseAudio_Support/"
     echo "WINE: -STAGING- Staging manually applied"
     apply_all_in_dir "../wine-staging/patches/Staging/"
 
