@@ -436,10 +436,9 @@ fi
 
 
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/721
-
-    echo "WINE: -GAME FIXES- make MapleStory launch: avoid NULL deref in CharPrevA/CharPrevExA"
-    apply_patch "../patches/game-patches/maplestory-kernelbase-charprev-null.patch"
-
+    # MapleStory CharPrevA/CharPrevExA NULL-start guard is upstream-absorbed
+    # (wine 9c62f14e696 for bug 59926 + 4dc910bbe4a wrapper rewrite; no *start
+    # deref remains, NULL start returns via `ptr <= start`). Patch deleted.
 
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/736
 
