@@ -4,24 +4,17 @@ From: Etaash Mathamsetty
 Date: Fri, 5 Jun 2026 14:18:04 -0400
 Subject: [PATCH 030/285] winewayland: Fix formatting issues.
 
+The cursor clipping whitespace fix is already present.
+Retarget the remaining icon formatting hunk only.
 ---
- dlls/winewayland.drv/window.c | 5 ++---
- 1 file changed, 2 insertions(+), 3 deletions(-)
+ dlls/winewayland.drv/window.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
 
 diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
-index 8d9f03974aa..55e245d74ce 100644
+index aea8551..e482967 100644
 --- a/dlls/winewayland.drv/window.c
 +++ b/dlls/winewayland.drv/window.c
-@@ -168,7 +168,7 @@ static void reapply_cursor_clipping(void)
- {
-     RECT rect;
-     UINT context = NtUserSetThreadDpiAwarenessContext(NTUSER_DPI_PER_MONITOR_AWARE);
--    if (NtUserGetClipCursor(&rect )) NtUserClipCursor(&rect);
-+    if (NtUserGetClipCursor(&rect)) NtUserClipCursor(&rect);
-     NtUserSetThreadDpiAwarenessContext(context);
- }
- 
-@@ -661,8 +661,7 @@ void WAYLAND_SetWindowIcons(HWND hwnd, HICON icon, const ICONINFO *ii, HICON ico
+@@ -883,8 +883,7 @@ void WAYLAND_SetWindowIcons(HWND hwnd, HICON icon, const ICONINFO *ii, HICON ico
              {
                  wayland_surface_set_icon_buffer(surface, ICON_BIG, ii);
                  if (icon_small) wayland_surface_set_icon_buffer(surface, ICON_SMALL, ii_small);
