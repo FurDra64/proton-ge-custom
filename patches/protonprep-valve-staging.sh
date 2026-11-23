@@ -798,7 +798,13 @@ fi
     # unless PROTON_ENABLE_WINEBTH=1. https://github.com/GloriousEggroll/proton-ge-custom/issues/814
     # https://github.com/evanjt/wine
     echo "WINE: -HOTFIX- Add Bluetooth LE GATT and WinRT BLE support"
-    apply_all_in_dir "../patches/wine-hotfixes/bluetooth-le/"
+    for patch in ../patches/wine-hotfixes/bluetooth-le/*.patch; do
+        case "$patch" in
+            # BL-1 (t_faccbf49): 0008 ntoskrnl PnP UAF fix is wine-owned now; skip here to avoid double-apply
+            */0008-*.patch) ;;
+            *) apply_patch "$patch" ;;
+        esac
+    done
 
     if [ "$CHECK_MODE" != "1" ]; then
         echo "WINE: RUN AUTOCONF TOOLS/MAKE_REQUESTS"
