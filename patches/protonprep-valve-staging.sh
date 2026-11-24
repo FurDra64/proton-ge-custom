@@ -262,20 +262,11 @@ fi
 ### (2-2) EM-11/WINE-WAYLAND PATCH SECTION ###
 
     # EM-11 5a1ae24b090b on Wine bleeding-edge 981e2f0b9007.
-    # Import and exclusion details: wine-hotfixes/wine-wayland/README.md
+    # Wine applies ge-wine-wayland and ge-wineland-child-rendering in (2-0).
 
     echo "WINE: -WINEOPENXR- copy files into wine"
     mkdir -p dlls/wineopenxr
     cp -R ../wineopenxr/* dlls/wineopenxr/
-
-    echo "WINE: -CUSTOM- ETAASH WINE-WAYLAND+ PATCHES"
-    apply_all_in_dir "../patches/wine-hotfixes/wine-wayland/"
-
-
-    # Original work by Erhan Bilgili:
-    # https://github.com/nanomatters/wine-wineland/tree/wineland_20260713-reorg
-    echo "WINE: -CUSTOM- WINELAND CROSS-PROCESS CHILD RENDERING"
-    apply_all_in_dir "../patches/wine-hotfixes/wineland-child-rendering/"
 
     echo "WINE: -CUSTOM- ETAASH WINE-WAYLAND+ FIXUPS"
     for patch in ../patches/wine-hotfixes/em-fixups/*.patch; do
@@ -716,8 +707,7 @@ fi
     # https://github.com/GloriousEggroll/proton-ge-custom/issues/873
 
 
-    echo "WINE: -HOTFIX- Implement GE-Proton ffmpeg + winedmo only video playback rework patches"
-    apply_all_in_dir "../patches/ge-video-rework/"
+    # Wine applies ge-video-rework in (2-0).
 
     # https://github.com/xzn/proton-ds5-haptic
     # Includes default VitaPad-to-DS4 translation (issue #691).
