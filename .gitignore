@@ -6,3 +6,6 @@
 
 /.vagrant/
 /vagrant_share/
+
+# patch-gate shadow trees (old gate versions exported these into the repo root)
+/.wine-check-*/

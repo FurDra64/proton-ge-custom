@@ -5,26 +5,37 @@ Fork-owned helper scripts. Upstream (GloriousEggroll/proton-ge-custom) has no
 
 | File | Purpose |
 |------|---------|
-| `pp-check.sh` | Apply-order gate for `patches/` (sections 1, 2-0..2-7). Byte-identical copy of the previously scratch-only gate that OBSOLETE-AUDIT.md calls "the official gate". |
-| `run-check.sh` | Thin wrapper: cd to the repo root, then `bash scripts/pp-check.sh --check`. |
+| `pp-check.sh` | Apply-order gate for `patches/` (sections 1, 2-0..2-7). Derived from the untracked `.dbg-ds5/pp-check.sh` that OBSOLETE-AUDIT.md calls "the official gate"; the shadow-tree handling is the only change (see below). |
+| `run-check.sh` | Wrapper: `cd` to the repo root, run the gate, print `EXIT=<rc>` plus the last log lines. Adapted from `~/.hermes/scripts/gate/run-check.sh`. |
 
 ## Usage
 
-From the repo root (the wine submodule must be checked out at the pinned commit):
+From anywhere (the wrapper resolves the repo root itself). The `wine` submodule
+must be checked out at the pinned commit:
 
 ```bash
-bash scripts/run-check.sh                 # = pp-check.sh --check
-bash scripts/pp-check.sh --check          # same, no wrapper
+bash scripts/run-check.sh                 # log -> ${TMPDIR:-/tmp}/pp-check-now.log
+bash scripts/run-check.sh /tmp/gate.log   # explicit log path
+bash scripts/pp-check.sh --check          # gate directly, must be run from the repo root
 ```
 
-`--check` exports `wine/HEAD` into a temporary shadow directory next to the repo
-root, applies the WINE sections (2-0..2-7) there, and removes the shadow on
-exit. The working tree is never modified. Known residuals are reported as
-`FAILED`; nothing is repaired.
+`--check` exports `wine/HEAD` into a shadow git repo, applies the WINE sections
+(2-0..2-7) there, and removes the shadow on exit. The working tree is never
+modified. Known residuals are reported as `FAILED`; nothing is repaired.
 
 Exit status: `0` = `check passed`, `1` = `check FAILED: N failed, M passed`.
 The summary's N counts OBSOLETE rows too — true failures are the `^FAILED`
 rows; `^OBSOLETE` rows are "already in tree, needs a removal decision".
+
+## Shadow trees
+
+- Created in `${TMPDIR:-/tmp}/pp-check-XXXXXX/`, with `wine/` holding the export
+  and a `patches` symlink back to the repo (the gate reaches the proton patches
+  through `../patches`).
+- Removed by an EXIT trap. A killed run leaves one behind, so the gate sweeps
+  stale `pp-check-*` dirs older than 24h at start, plus any legacy
+  `$REPO/.wine-check-*` trees created by older versions (those are also
+  `.gitignore`d).
 
 ## Environment
 
@@ -37,7 +48,10 @@ rows; `^OBSOLETE` rows are "already in tree, needs a removal decision".
 
 ## Provenance
 
-`pp-check.sh` was carried only in the untracked `.dbg-ds5/` debug tree; the
-former scratch wrapper `run-check.sh` was deleted when the scratch cache was
-pruned, which made the audit in `OBSOLETE-AUDIT.md` non-reproducible. Both are
-committed here so the audit can be re-run from a clean clone.
+The gate lived only in the untracked `.dbg-ds5/` debug tree, and the wrapper
+used by the gate commands in kanban cards lived in the 24h-pruned scratch dir
+(`~/.hermes/cache/scratch/run-check.sh`, since deleted). A durable copy of the
+wrapper survives at `~/.hermes/scripts/gate/run-check.sh`; `scripts/run-check.sh`
+is that wrapper with the repo root resolved from the script location and the
+gate path pointed at this directory. Committing both makes the audit in
+`OBSOLETE-AUDIT.md` reproducible from a clean clone.

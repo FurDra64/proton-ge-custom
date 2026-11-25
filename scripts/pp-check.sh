@@ -106,23 +106,37 @@ FAIL_COUNT=0
 # Known residuals are reported as FAILED, never repaired here.
 if [ "${1:-}" = "--check" ]; then
     CHECK_MODE=1
+    REPO_ROOT="$PWD"
+
+    # Export wine/HEAD into a git repo so the gate can diff/reverse-check it.
+    export_shadow() {
+        local shadow="$1"
+        rm -rf "$shadow"; mkdir -p "$shadow"
+        git -C wine archive HEAD | tar -x -C "$shadow"
+        git -C "$shadow" init -q
+        git -C "$shadow" -c user.email=check@local -c user.name=check add -A
+        git -C "$shadow" -c user.email=check@local -c user.name=check commit -qm base
+    }
+
+    # Sweep leftovers first. Old gate versions created the shadow in the repo
+    # root ($PWD/.wine-check-*); a killed run could not fire its EXIT trap, so
+    # those accumulated as multi-GB trees. Shadows now live in ${TMPDIR:-/tmp},
+    # and stale ones (>24h, e.g. after a kill) are swept here too.
+    find "$REPO_ROOT" -maxdepth 1 -type d -name '.wine-check-*' -exec rm -rf {} + 2>/dev/null
+    find "${TMPDIR:-/tmp}" -maxdepth 1 -type d -name 'pp-check-*' -mmin +1440 -exec rm -rf {} + 2>/dev/null
+
     if [ -n "${SHADOW_REUSE:-}" ]; then
         SHADOW="$SHADOW_REUSE"
-        if [ ! -d "$SHADOW" ] || [ ! -e "$SHADOW/.git" ]; then
-            rm -rf "$SHADOW"; mkdir -p "$SHADOW"
-            git -C wine archive HEAD | tar -x -C "$SHADOW"
-            git -C "$SHADOW" init -q
-            git -C "$SHADOW" -c user.email=check@local -c user.name=check add -A
-            git -C "$SHADOW" -c user.email=check@local -c user.name=check commit -qm base
-        fi
+        [ -e "$SHADOW/.git" ] || export_shadow "$SHADOW"
         echo "check: reusing shadow $SHADOW"
     else
-        SHADOW="$(mktemp -d "${PWD}/.wine-check-XXXXXX")"
-        trap 'cd / && rm -rf "$SHADOW"' EXIT
-        git -C wine archive HEAD | tar -x -C "$SHADOW"
-        git -C "$SHADOW" init -q
-        git -C "$SHADOW" -c user.email=check@local -c user.name=check add -A
-        git -C "$SHADOW" -c user.email=check@local -c user.name=check commit -qm base
+        # The shadow's parent must expose ../patches (the proton patch dir the
+        # gate applies), so it gets a symlink rather than living in the repo.
+        SHADOW_PARENT="$(mktemp -d "${TMPDIR:-/tmp}/pp-check-XXXXXX")"
+        SHADOW="$SHADOW_PARENT/wine"
+        trap 'cd / && rm -rf "$SHADOW_PARENT"' EXIT
+        export_shadow "$SHADOW"
+        ln -sfn "$REPO_ROOT/patches" "$SHADOW_PARENT/patches"
     fi
     echo "check: running WINE sections (2-0 through 2-7) against $SHADOW"
 fi
