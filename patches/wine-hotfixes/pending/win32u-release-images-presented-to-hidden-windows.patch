@@ -23,21 +23,11 @@ Visible windows and managed (cross-process) swapchains are unchanged.
 
 https://github.com/GloriousEggroll/proton-ge-custom/issues/837
 ---
-diff --git a/include/wine/vulkan_driver.h b/include/wine/vulkan_driver.h
---- a/include/wine/vulkan_driver.h
-+++ b/include/wine/vulkan_driver.h
-@@ -233,6 +233,7 @@
-     struct vulkan_queue *queues;
-     VkQueueFamilyProperties *queue_props;
-     BOOL low_latency_enabled;
-+    BOOL release_swapchain_images; /* swapchainMaintenance1 enabled for presents to hidden windows */
- 
-     pthread_t signaller_thread;
-     pthread_mutex_t signaller_mutex;
 diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
+index 6089a80..1c73e53 100644
 --- a/dlls/win32u/vulkan.c
 +++ b/dlls/win32u/vulkan.c
-@@ -1533,6 +1533,20 @@
+@@ -1623,6 +1623,20 @@ static BOOL use_three_image_present_modes( struct vulkan_physical_device *physic
      return maintenance.swapchainMaintenance1;
  }
  
@@ -58,9 +48,9 @@ diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
  static VkResult convert_device_create_info( struct vulkan_physical_device *physical_device, VkDeviceCreateInfo *info,
                                              struct mempool *pool, struct vulkan_device *device )
  {
-@@ -1603,6 +1617,24 @@
-         maintenance->swapchainMaintenance1 = VK_TRUE;
+@@ -1696,6 +1710,24 @@ static VkResult convert_device_create_info( struct vulkan_physical_device *physi
      }
+ 
  
 +    /* Presents to hidden windows release their images instead of reaching the
 +     * host compositor, see win32u_vkQueuePresentKHR. That needs the feature. */
@@ -83,7 +73,7 @@ diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
      /* Force-enable the extensions the cross-process producer needs so we can
       * interpose a managed swapchain even when the app did not request them.
       * Only meaningful for swapchain devices. */
-@@ -6207,10 +6239,11 @@
+@@ -6032,10 +6064,11 @@ static VkResult win32u_vkQueuePresentKHR( VkQueue client_queue, const VkPresentI
      const VkSwapchainKHR *client_swapchains;
      VkSwapchainKHR *swapchains;
      uint32_t host_indices_buffer[16], *host_indices = host_indices_buffer;
@@ -96,7 +86,7 @@ diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
      BOOL skip_managed = FALSE;
      BOOL managed_present_waits_consumed = FALSE;
      VkCommandBuffer *blit_cmds;
-@@ -6224,6 +6257,8 @@
+@@ -6049,6 +6082,8 @@ static VkResult win32u_vkQueuePresentKHR( VkQueue client_queue, const VkPresentI
      if (!(blit_cmds = mem_alloc( &pool, present_info->swapchainCount * sizeof(blit_cmds) ))) goto failed;
      if (present_info->swapchainCount > ARRAY_SIZE(host_indices_buffer) &&
          !(host_indices = mem_alloc( &pool, present_info->swapchainCount * sizeof(*host_indices) ))) goto failed;
@@ -105,7 +95,7 @@ diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
  
      for (uint32_t i = 0; i < present_info->swapchainCount; ++i)
      {
-@@ -6274,6 +6309,16 @@
+@@ -6099,6 +6134,16 @@ static VkResult win32u_vkQueuePresentKHR( VkQueue client_queue, const VkPresentI
              if (!first_managed) first_managed = swapchain->managed;
              continue;
          }
@@ -122,7 +112,7 @@ diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
          swapchains[host_count] = swapchain->obj.host.swapchain;
          host_indices[host_count] = i;
          host_count++;
-@@ -6391,6 +6436,49 @@
+@@ -6216,6 +6261,49 @@ host_present_done:
          else managed_present_waits_consumed = TRUE;
      }
  
@@ -172,3 +162,15 @@ diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
      /* Present each managed swapchain after the present waits are consumed. */
      for (uint32_t i = 0; i < present_info->swapchainCount; i++)
      {
+diff --git a/include/wine/vulkan_driver.h b/include/wine/vulkan_driver.h
+index e1833b9..77f5e33 100644
+--- a/include/wine/vulkan_driver.h
++++ b/include/wine/vulkan_driver.h
+@@ -233,6 +233,7 @@ struct vulkan_device
+     struct vulkan_queue *queues;
+     VkQueueFamilyProperties *queue_props;
+     BOOL low_latency_enabled;
++    BOOL release_swapchain_images; /* swapchainMaintenance1 enabled for presents to hidden windows */
+ 
+     pthread_t signaller_thread;
+     pthread_mutex_t signaller_mutex;
