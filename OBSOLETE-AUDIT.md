@@ -1,7 +1,10 @@
 # OBSOLETE-65 Audit (t_5ff0e2ac)
 
-Gate: `bash /home/furdra/.hermes/cache/scratch/run-check.sh`
-(`.dbg-ds5/pp-check.sh --check`, official WINE sections 2-0..2-7 on a shadow tree).
+Gate: `bash scripts/run-check.sh`
+(`scripts/pp-check.sh --check`, official WINE sections 2-0..2-7 on a shadow tree).
+(The audit originally invoked `~/.hermes/cache/scratch/run-check.sh`, a scratch
+wrapper that only did `cd <repo> && bash .dbg-ds5/pp-check.sh --check`; both
+scripts are now in-repo under `scripts/`, see `scripts/README.md`.)
 Base: proton `sync/wine-submodule` + wine pin `34c16565b9d`.
 HEAD at audit: `3e58ed1dc` (parent-task gate: 0 FAILED / 65 OBSOLETE / 692 passed).
 
