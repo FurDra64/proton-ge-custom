@@ -30,9 +30,10 @@ compatibility reference (no code copied):
 https://github.com/torvalds/linux/blob/master/drivers/hid/hid-playstation.c
 ---
 diff --git a/dlls/winebus.sys/bus_udev.c b/dlls/winebus.sys/bus_udev.c
+index 9f48656..62b3bd1 100644
 --- a/dlls/winebus.sys/bus_udev.c
 +++ b/dlls/winebus.sys/bus_udev.c
-@@ -1526,6 +1526,31 @@
+@@ -1571,6 +1571,31 @@ static BOOL spoof_dualshock4_v2_as_v1(void)
      return env && env[0] == '1' && !env[1];
  }
  
@@ -64,7 +65,7 @@ diff --git a/dlls/winebus.sys/bus_udev.c b/dlls/winebus.sys/bus_udev.c
  static NTSTATUS hidraw_device_create(struct udev_device *dev, int fd, const char *devnode, struct device_desc desc)
  {
  #ifdef HAVE_LINUX_HIDRAW_H
-@@ -1562,6 +1587,15 @@
+@@ -1606,6 +1631,15 @@ static NTSTATUS hidraw_device_create(struct udev_device *dev, int fd, const char
          TRACE("exposing DualShock 4 v2 hidraw controller %04x:%04x directly as DualShock 4 v1.\n",
                  desc.vid, desc.pid);
      }
@@ -81,9 +82,10 @@ diff --git a/dlls/winebus.sys/bus_udev.c b/dlls/winebus.sys/bus_udev.c
      if (!desc.product[0] && ioctl(fd, HIDIOCGRAWNAME(sizeof(buffer) - 1), buffer) >= 0)
          ntdll_umbstowcs(buffer, strlen(buffer) + 1, desc.product, ARRAY_SIZE(desc.product));
 diff --git a/dlls/winebus.sys/main.c b/dlls/winebus.sys/main.c
+index cd959db..d63aac0 100644
 --- a/dlls/winebus.sys/main.c
 +++ b/dlls/winebus.sys/main.c
-@@ -593,6 +593,7 @@
+@@ -605,6 +605,7 @@ static UINT get_windows_product_id(const struct device_extension *ext)
      if (ext->desc.use_xbox_identity) return 0x028e;
      if (ext->desc.spoof_dualshock4_v1) return 0x05c4;
      if (ext->desc.spoof_dualshock4) return 0x09cc;
@@ -91,7 +93,7 @@ diff --git a/dlls/winebus.sys/main.c b/dlls/winebus.sys/main.c
      return ext->desc.pid;
  }
  
-@@ -601,6 +602,7 @@
+@@ -613,6 +614,7 @@ static const WCHAR *get_windows_product_string(const struct device_extension *ex
      if (ext->desc.use_xbox_identity) return L"Xbox 360 Controller for Windows";
      if (ext->desc.spoof_dualshock4 || ext->desc.spoof_dualshock4_v1)
          return L"Wireless Controller";
@@ -100,14 +102,14 @@ diff --git a/dlls/winebus.sys/main.c b/dlls/winebus.sys/main.c
  }
  
 diff --git a/dlls/winebus.sys/unixlib.h b/dlls/winebus.sys/unixlib.h
+index 70f0c8f..7ac7419 100644
 --- a/dlls/winebus.sys/unixlib.h
 +++ b/dlls/winebus.sys/unixlib.h
-@@ -43,6 +43,7 @@
+@@ -43,6 +43,7 @@ struct device_desc
      BOOL is_hidraw;
      BOOL spoof_dualshock4;
      BOOL spoof_dualshock4_v1;
 +    BOOL spoof_dualsense;
      BOOL use_xbox_identity;
  
-     WCHAR manufacturer[MAX_PATH];
-
+     WCHAR parent[MAX_PATH]; /* backend specific string uniquely identifying the device parent */
