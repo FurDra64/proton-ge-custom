@@ -130,13 +130,21 @@ if [ "${1:-}" = "--check" ]; then
         [ -e "$SHADOW/.git" ] || export_shadow "$SHADOW"
         echo "check: reusing shadow $SHADOW"
     else
-        # The shadow's parent must expose ../patches (the proton patch dir the
-        # gate applies), so it gets a symlink rather than living in the repo.
+        # The gate reaches sibling trees through ../ (patches/, wine-staging/,
+        # wineopenxr/). Mirror the repo's top level in the shadow's parent so
+        # those lookups resolve exactly as they did when the shadow lived in
+        # the repo root, without writing anything into the repo.
         SHADOW_PARENT="$(mktemp -d "${TMPDIR:-/tmp}/pp-check-XXXXXX")"
         SHADOW="$SHADOW_PARENT/wine"
         trap 'cd / && rm -rf "$SHADOW_PARENT"' EXIT
         export_shadow "$SHADOW"
-        ln -sfn "$REPO_ROOT/patches" "$SHADOW_PARENT/patches"
+        for entry in "$REPO_ROOT"/* "$REPO_ROOT"/.[!.]*; do
+            name="${entry##*/}"
+            case "$name" in
+                wine|.git|.wine-check-*) continue ;;
+            esac
+            [ -e "$entry" ] && ln -sfn "$entry" "$SHADOW_PARENT/$name"
+        done
     fi
     echo "check: running WINE sections (2-0 through 2-7) against $SHADOW"
 fi
